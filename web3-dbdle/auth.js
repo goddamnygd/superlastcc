@@ -1,0 +1,296 @@
+/* Shared login + avatar module. The same file is used by the Wiki, Minigame and DBDle sites.
+   It builds its own button, modal and styles, so the pages only need <script src="auth.js">.
+   Every site is a different domain, so the login is remembered per site (browser storage is not shared). */
+(function () {
+    "use strict";
+
+    const API = "https://cloudcompfinale.vercel.app/api/v1";
+    const TOKEN_KEY = "dbd_token";
+    const WIKI_URL = "https://cloudcompfinale-web1.vercel.app/";
+
+    let token = readToken();
+    let user = null;
+    let avatar = null;
+
+    // ---------- storage ----------
+    function readToken() { try { return localStorage.getItem(TOKEN_KEY); } catch (e) { return null; } }
+    function saveToken(t) {
+        token = t;
+        try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch (e) { /* private mode */ }
+    }
+
+    // ---------- tiny DOM helper (textContent only, so API data can never inject HTML) ----------
+    function el(tag, attrs, ...kids) {
+        const node = document.createElement(tag);
+        for (const [k, v] of Object.entries(attrs || {})) {
+            if (k.startsWith("on")) node.addEventListener(k.slice(2), v);
+            else if (k === "class") node.className = v;
+            else node.setAttribute(k, v);
+        }
+        kids.flat().forEach(c => { if (c != null) node.append(c.nodeType ? c : document.createTextNode(c)); });
+        return node;
+    }
+
+    // ---------- API ----------
+    async function api(path, { method = "GET", body } = {}) {
+        const headers = {};
+        if (body) headers["Content-Type"] = "application/json";
+        if (token) headers["Authorization"] = "Bearer " + token;
+        let res;
+        try {
+            res = await fetch(API + path, { method, headers, body: body ? JSON.stringify(body) : undefined, cache: "no-store" });
+        } catch (e) {
+            throw new Error("Cannot reach the server.");
+        }
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            const first = data.errors && data.errors[0];
+            const err = new Error(first ? first.message : (data.detail || "Request failed."));
+            err.status = res.status;
+            throw err;
+        }
+        return data;
+    }
+
+    async function refresh() {
+        if (!token) { user = null; avatar = null; return paintButton(); }
+        try {
+            const data = await api("/me");
+            user = data.user; avatar = data.avatar;
+        } catch (e) {
+            if (e.status === 401) saveToken(null);
+            user = null; avatar = null;
+        }
+        paintButton();
+    }
+
+    // ---------- styles ----------
+    const css = `
+    .dbda-btn{margin-left:4px;padding:8px 12px;background:#c11111;border:1px solid #c11111;color:#fff;font:900 10px/1 Montserrat,Arial,sans-serif;letter-spacing:.08em;cursor:pointer;white-space:nowrap}
+    .dbda-btn:hover{background:#751010;border-color:#751010}
+    .dbda-overlay{position:fixed;inset:0;z-index:3000;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(0,0,0,.88);overflow-y:auto}
+    .dbda-box{position:relative;width:100%;max-width:440px;padding:28px;background:#101114;border:1px solid #751010;box-shadow:0 0 40px rgba(177,0,0,.28);color:#f4f4f4;font-family:Montserrat,Arial,sans-serif}
+    .dbda-box.wide{max-width:640px}
+    .dbda-box h2{font:400 32px/1 Anton,Impact,sans-serif;letter-spacing:.02em;margin-bottom:6px}
+    .dbda-box p.sub{color:#9b9da2;font-size:13px;line-height:1.6;margin-bottom:18px}
+    .dbda-x{position:absolute;top:8px;right:14px;background:none;border:0;color:#888;font-size:28px;cursor:pointer}
+    .dbda-x:hover{color:#e22929}
+    .dbda-box label{display:block;margin:12px 0 5px;color:#e22929;font-size:10px;font-weight:900;letter-spacing:.1em}
+    .dbda-box input,.dbda-box select{width:100%;min-height:42px;padding:0 12px;background:#0d0d0d;border:1px solid #2a2a2a;color:#f4f4f4;font:700 13px Montserrat,Arial,sans-serif;outline:none}
+    .dbda-box input:focus,.dbda-box select:focus{border-color:#c11111}
+    .dbda-box input[type=checkbox]{width:auto;min-height:0}
+    .dbda-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}
+    .dbda-b{min-height:40px;padding:0 18px;background:#c11111;border:1px solid #c11111;color:#fff;font:900 11px Montserrat,Arial,sans-serif;letter-spacing:.08em;cursor:pointer}
+    .dbda-b:hover{background:#751010}
+    .dbda-b.ghost{background:transparent;border-color:rgba(255,255,255,.35)}
+    .dbda-b.ghost:hover{background:#fff;color:#000}
+    .dbda-b:disabled{opacity:.4;cursor:wait}
+    .dbda-err{min-height:18px;margin-top:12px;color:#ff4b4b;font-size:12px;font-weight:700}
+    .dbda-link{background:none;border:0;color:#9b9da2;font:700 12px Montserrat,Arial,sans-serif;text-decoration:underline;cursor:pointer;margin-top:14px}
+    .dbda-chip{display:inline-block;margin-left:8px;padding:3px 8px;border:1px solid #c11111;color:#e22929;font:900 9px Montserrat,Arial,sans-serif;letter-spacing:.1em;vertical-align:middle}
+    .dbda-avatar{display:flex;gap:16px;align-items:center;margin-top:16px;padding:14px;background:#090909;border:1px solid #242424}
+    .dbda-avatar img{width:72px;height:92px;object-fit:cover;object-position:top center;border:1px solid #751010;background:#0d0d0d}
+    .dbda-avatar strong{display:block;font:400 24px Anton,Impact,sans-serif;letter-spacing:.02em}
+    .dbda-lv{display:inline-block;margin-top:6px;padding:4px 10px;background:#c11111;font:900 11px Montserrat,Arial,sans-serif;letter-spacing:.1em}
+    .dbda-avatar small{display:block;margin-top:6px;color:#9b9da2;font-size:11px}
+    .dbda-tbl{width:100%;margin-top:14px;border-collapse:collapse;font-size:12px}
+    .dbda-tbl th{text-align:left;padding:8px 6px;color:#e22929;font-size:10px;letter-spacing:.1em;border-bottom:1px solid #2a2a2a}
+    .dbda-tbl td{padding:8px 6px;border-bottom:1px solid rgba(255,255,255,.06)}
+    .dbda-tbl select{min-height:32px;font-size:12px}
+    .dbda-scroll{max-height:55vh;overflow:auto}
+    .dbda-toast{position:fixed;left:50%;bottom:28px;z-index:3100;transform:translateX(-50%);max-width:90vw;padding:12px 20px;background:#101114;border:1px solid #c11111;color:#fff;font:800 12px Montserrat,Arial,sans-serif;letter-spacing:.05em;box-shadow:0 8px 30px rgba(0,0,0,.6);animation:dbdaIn .25s ease}
+    .dbda-toast.levelup{background:#c11111;font-size:14px}
+    .dbda-equip{margin-top:16px}
+    @keyframes dbdaIn{from{opacity:0;transform:translate(-50%,10px)}to{opacity:1;transform:translate(-50%,0)}}
+    `;
+    document.head.append(el("style", {}, css));
+
+    // ---------- toast ----------
+    let toastTimer;
+    function toast(message, kind) {
+        document.querySelectorAll(".dbda-toast").forEach(t => t.remove());
+        const t = el("div", { class: "dbda-toast " + (kind || ""), role: "status" }, message);
+        document.body.append(t);
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => t.remove(), kind === "levelup" ? 4500 : 3200);
+    }
+
+    // ---------- nav button ----------
+    const navButton = el("button", { class: "dbda-btn", type: "button", onclick: () => open(user ? "account" : "login") }, "LOG IN");
+    function paintButton() {
+        navButton.textContent = user
+            ? user.username.toUpperCase() + (avatar ? "  ·  LV " + avatar.level : "")
+            : "LOG IN";
+    }
+    function mountButton() {
+        const nav = document.querySelector(".topbar nav");
+        (nav || document.body).append(navButton);
+    }
+
+    // ---------- modal ----------
+    let overlay = null;
+    function close() { if (overlay) { overlay.remove(); overlay = null; } }
+    function open(view) {
+        close();
+        const box = el("div", { class: "dbda-box" + (view === "admin" ? " wide" : "") },
+            el("button", { class: "dbda-x", type: "button", "aria-label": "Close", onclick: close }, "×"));
+        overlay = el("div", { class: "dbda-overlay", onmousedown: e => { if (e.target === overlay) close(); } }, box);
+        document.body.append(overlay);
+        ({ login: loginView, register: registerView, account: accountView, admin: adminView }[view] || loginView)(box);
+    }
+    document.addEventListener("keydown", e => { if (e.key === "Escape") close(); });
+
+    function field(label, type, name, extra) {
+        const input = el("input", Object.assign({ type, name, required: "", autocomplete: "off" }, extra || {}));
+        return [el("label", {}, label), input];
+    }
+
+    // generic form that handles submit, busy state and error text
+    function form(onSubmit, submitText, fields) {
+        const err = el("div", { class: "dbda-err", "aria-live": "polite" });
+        const btn = el("button", { class: "dbda-b", type: "submit" }, submitText);
+        const f = el("form", {
+            onsubmit: async e => {
+                e.preventDefault();
+                err.textContent = ""; btn.disabled = true;
+                try { await onSubmit(Object.fromEntries(new FormData(f))); }
+                catch (ex) { err.textContent = ex.message; }
+                btn.disabled = false;
+            }
+        }, fields, err, el("div", { class: "dbda-row" }, btn));
+        return f;
+    }
+
+    async function afterAuth(data) {
+        saveToken(data.token);
+        await refresh();
+        close();
+        toast("Welcome, " + user.username + ".");
+    }
+
+    function loginView(box) {
+        box.append(
+            el("h2", {}, "LOG IN"),
+            el("p", { class: "sub" }, "Log in to equip an avatar and level it up by winning games."),
+            form(async v => afterAuth(await api("/auth/login", { method: "POST", body: { identifier: v.identifier, password: v.password } })),
+                "LOG IN",
+                [field("USERNAME OR EMAIL", "text", "identifier", { autocomplete: "username" }),
+                 field("PASSWORD", "password", "password", { autocomplete: "current-password" })]),
+            el("button", { class: "dbda-link", type: "button", onclick: () => open("register") }, "No account yet? Create one")
+        );
+    }
+
+    function registerView(box) {
+        box.append(
+            el("h2", {}, "CREATE ACCOUNT"),
+            el("p", { class: "sub" }, "Username: 3 to 30 letters, numbers or underscore. Password: at least 8 characters."),
+            form(async v => afterAuth(await api("/auth/register", { method: "POST", body: { username: v.username, email: v.email, password: v.password } })),
+                "CREATE ACCOUNT",
+                [field("USERNAME", "text", "username", { autocomplete: "username", maxlength: "30" }),
+                 field("EMAIL", "email", "email", { autocomplete: "email" }),
+                 field("PASSWORD", "password", "password", { autocomplete: "new-password", minlength: "8", maxlength: "72" })]),
+            el("button", { class: "dbda-link", type: "button", onclick: () => open("login") }, "Already have an account? Log in")
+        );
+    }
+
+    function accountView(box) {
+        if (!user) return loginView(box);
+        const isAdmin = user.role === "admin";
+        box.append(
+            el("h2", {}, user.username.toUpperCase(), el("span", { class: "dbda-chip" }, isAdmin ? "ADMIN" : "PLAYER")),
+            el("p", { class: "sub" }, user.email)
+        );
+
+        if (avatar && avatar.character) {
+            const c = avatar.character;
+            box.append(el("div", { class: "dbda-avatar" },
+                el("img", { src: c.image || "", alt: c.name }),
+                el("div", {},
+                    el("strong", {}, c.name),
+                    el("span", { class: "dbda-lv" }, "LEVEL " + avatar.level),
+                    el("small", {}, avatar.wins + (avatar.wins === 1 ? " win" : " wins") + " · " + c.role))));
+        } else {
+            box.append(el("div", { class: "dbda-avatar" }, el("div", {},
+                el("strong", {}, "NO AVATAR"),
+                el("small", {}, "Open any character on the Wiki and press EQUIP AS AVATAR. Win games to level it up."))));
+        }
+
+        const row = el("div", { class: "dbda-row" });
+        if (!avatar) row.append(el("a", { class: "dbda-b ghost", href: WIKI_URL, style: "display:inline-flex;align-items:center;text-decoration:none;color:#fff" }, "GO TO WIKI"));
+        if (avatar) row.append(el("button", { class: "dbda-b ghost", type: "button", onclick: async () => {
+            try { await api("/me/avatar", { method: "DELETE" }); avatar = null; paintButton(); open("account"); toast("Avatar removed."); }
+            catch (e) { toast(e.message); }
+        } }, "REMOVE AVATAR"));
+        if (isAdmin) row.append(el("button", { class: "dbda-b ghost", type: "button", onclick: () => open("admin") }, "MANAGE USERS"));
+        row.append(el("button", { class: "dbda-b", type: "button", onclick: () => { saveToken(null); user = null; avatar = null; paintButton(); close(); toast("Logged out."); } }, "LOG OUT"));
+        row.append(el("button", { class: "dbda-b ghost", type: "button", onclick: async () => {
+            try { await api("/auth/logout-all", { method: "POST" }); } catch (e) { /* token may already be dead */ }
+            saveToken(null); user = null; avatar = null; paintButton(); close(); toast("Logged out on all devices.");
+        } }, "LOG OUT EVERYWHERE"));
+        box.append(row);
+    }
+
+    async function adminView(box) {
+        box.append(el("h2", {}, "MANAGE USERS"), el("p", { class: "sub" }, "Change a role or disable an account. At least one active admin must always remain."));
+        const holder = el("div", { class: "dbda-scroll" }, "Loading…");
+        box.append(holder, el("div", { class: "dbda-row" }, el("button", { class: "dbda-b ghost", type: "button", onclick: () => open("account") }, "BACK")));
+        try {
+            const data = await api("/admin/users?limit=100");
+            const body = el("tbody");
+            data.users.forEach(u => {
+                const role = el("select", { "aria-label": "Role of " + u.username },
+                    el("option", { value: "1" }, "user"), el("option", { value: "2" }, "admin"));
+                role.value = String(u.role_id);
+                const active = el("input", { type: "checkbox", "aria-label": "Active: " + u.username });
+                active.checked = u.is_active;
+                const save = async (changes, undo) => {
+                    try { await api("/admin/users/" + u.id, { method: "PATCH", body: changes }); toast("Saved " + u.username + "."); }
+                    catch (e) { undo(); toast(e.message); }
+                };
+                role.addEventListener("change", () => { const prev = u.role_id; save({ role_id: Number(role.value) }, () => { role.value = String(prev); }); u.role_id = Number(role.value); });
+                active.addEventListener("change", () => save({ is_active: active.checked }, () => { active.checked = !active.checked; }));
+                body.append(el("tr", {}, el("td", {}, u.username), el("td", {}, role), el("td", {}, active)));
+            });
+            holder.replaceChildren(el("table", { class: "dbda-tbl" },
+                el("thead", {}, el("tr", {}, el("th", {}, "USERNAME"), el("th", {}, "ROLE"), el("th", {}, "ACTIVE"))), body));
+        } catch (e) { holder.textContent = e.message; }
+    }
+
+    // ---------- public API used by the pages ----------
+    async function equip(characterId, name) {
+        if (!token || !user) { toast("Log in first to equip an avatar."); open("login"); return; }
+        try {
+            const data = await api("/me/avatar", { method: "PUT", body: { character_id: Number(characterId) } });
+            avatar = data.avatar; paintButton();
+            toast(name + " is now your avatar (level " + avatar.level + ").");
+        } catch (e) {
+            if (e.status === 401) { saveToken(null); user = null; paintButton(); open("login"); }
+            toast(e.message);
+        }
+    }
+
+    async function reportWin(game) {
+        if (!token || !user) { toast("Log in and equip an avatar to level up when you win."); return; }
+        try {
+            const r = await api("/me/avatar/win", { method: "POST", body: { game } });
+            if (r.leveled_up) {
+                avatar = r.avatar; paintButton();
+                toast("LEVEL UP! " + avatar.character.name + " is now level " + avatar.level, "levelup");
+            } else if (r.reason === "no_avatar") {
+                toast("You won! Equip an avatar on the Wiki to start leveling up.");
+            }
+        } catch (e) {
+            if (e.status === 401) { saveToken(null); user = null; paintButton(); }
+        }
+    }
+
+    function equipButton(characterId, name) {
+        return el("button", { class: "dbda-b dbda-equip", type: "button", onclick: () => equip(characterId, name) }, "EQUIP AS AVATAR");
+    }
+
+    window.DBDAuth = { equip, equipButton, reportWin, open, isLoggedIn: () => !!user };
+
+    // ---------- start ----------
+    function start() { mountButton(); paintButton(); refresh(); }
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
+})();
