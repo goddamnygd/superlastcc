@@ -1,4 +1,4 @@
-const API_URL = "https://superlastcc.vercel.app/";
+const API_URL = "https://superlastcc.vercel.app/api/v1";
 const API_KEY = "student-api-key-123";
 
 let currentPage = 0;
