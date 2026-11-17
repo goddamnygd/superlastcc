@@ -1,5 +1,5 @@
 // API CONFIGURATION
-const API_BASE_URL = "https://cloudcompfinale.vercel.app/api/v1";
+const API_BASE_URL = "https://superlastcc.vercel.app/api/v1";
 const API_KEY = "student-api-key-123";
 
 // DOM REFERENCES
