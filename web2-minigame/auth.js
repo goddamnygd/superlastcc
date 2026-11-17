@@ -6,7 +6,7 @@
 
     const API = "https://superlastcc.vercel.app/api/v1";
     const TOKEN_KEY = "dbd_token";
-    const WIKI_URL = "https://cloudcompfinale-web1.vercel.app/";
+    const WIKI_URL = "https://superlastcc-web1-wiki.vercel.app/";
 
     let token = readToken();
     let user = null;
