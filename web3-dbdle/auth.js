@@ -4,9 +4,9 @@
 (function () {
     "use strict";
 
-    const API = "https://cloudcompfinale.vercel.app/api/v1";
+    const API = "https://superlastcc.vercel.app/api/v1";
     const TOKEN_KEY = "dbd_token";
-    const WIKI_URL = "https://cloudcompfinale-web1.vercel.app/";
+    const WIKI_URL = "https://superlastcc-web1-wiki.vercel.app/";
 
     let token = readToken();
     let user = null;
@@ -27,7 +27,7 @@
             else if (k === "class") node.className = v;
             else node.setAttribute(k, v);
         }
-        kids.flat().forEach(c => { if (c != null) node.append(c.nodeType ? c : document.createTextNode(c)); });
+        kids.flat(Infinity).forEach(c => { if (c != null) node.append(c.nodeType ? c : document.createTextNode(c)); });
         return node;
     }
 
