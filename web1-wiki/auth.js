@@ -27,7 +27,7 @@
             else if (k === "class") node.className = v;
             else node.setAttribute(k, v);
         }
-        kids.flat().forEach(c => { if (c != null) node.append(c.nodeType ? c : document.createTextNode(c)); });
+        kids.flat(Infinity).forEach(c => { if (c != null) node.append(c.nodeType ? c : document.createTextNode(c)); });
         return node;
     }
 
