@@ -2,6 +2,7 @@ import logging
 import os
 import re
 import secrets
+from fractions import Fraction
 from datetime import datetime, timedelta, timezone
 from typing import Literal, Optional
 
@@ -36,7 +37,13 @@ JWT_SECRET = os.getenv("JWT_SECRET")        # signs login tokens, long random st
 TOKEN_HOURS = int(os.getenv("TOKEN_HOURS", "24"))
 MAX_LOGIN_ATTEMPTS = int(os.getenv("MAX_LOGIN_ATTEMPTS", "5"))
 LOCK_MINUTES = int(os.getenv("LOCK_MINUTES", "15"))
-WIN_COOLDOWN_SECONDS = int(os.getenv("WIN_COOLDOWN_SECONDS", "10"))  # min time between two level-ups
+WIN_COOLDOWN_SECONDS = int(os.getenv("WIN_COOLDOWN_SECONDS", "10"))  # min time between two wins that count
+
+# Leveling rules. These MUST match avatar_level_for_xp() in sql/accounts.sql.
+#   every win = 50 XP, level 1 needs 100 XP, each next level needs 1.25x the one before (rounded down)
+WIN_XP = 50
+LEVEL_BASE_XP = 100
+LEVEL_GROWTH = Fraction(5, 4)
 USER_ROLE_ID = 1
 ADMIN_ROLE_ID = 2
 
@@ -563,7 +570,7 @@ class AdminUserUpdate(BaseModel):
 # ACCOUNTS: database layer
 # ============================================================
 USER_COLUMNS = "id, username, email, role_id, is_active, token_version, locked_until, last_login_at, created_at"
-AVATAR_COLUMNS = "level, wins, equipped_at, last_win_at, character:characters(id, name, character_code, role, realm, image)"
+AVATAR_COLUMNS = "xp, level, wins, equipped_at, last_win_at, character:characters(id, name, character_code, role, realm, image)"
 
 
 def public_user(user: dict) -> dict:
@@ -622,9 +629,27 @@ def db_rpc(name: str, params: dict):
     return run(get_client().rpc(name, params)).data
 
 
+def level_progress(xp: int) -> dict:
+    """Where an avatar stands for a given XP total. Mirrors avatar_level_for_xp() in the database."""
+    level, left, need = 0, max(int(xp), 0), Fraction(LEVEL_BASE_XP)
+    while left >= int(need):          # int() rounds down, like floor() in SQL
+        left -= int(need)
+        level += 1
+        need *= LEVEL_GROWTH
+    return {"level": level, "xp_into_level": left, "xp_for_next_level": int(need)}
+
+
+def with_progress(avatar: Optional[dict]) -> Optional[dict]:
+    """Adds the progress bar numbers to an avatar row."""
+    if not avatar:
+        return avatar
+    progress = level_progress(avatar["xp"])
+    return {**avatar, "xp_into_level": progress["xp_into_level"], "xp_for_next_level": progress["xp_for_next_level"]}
+
+
 def db_get_avatar(user_id: int):
     res = run(get_client().table("equipped_avatar").select(AVATAR_COLUMNS).eq("user_id", user_id).limit(1))
-    return res.data[0] if res.data else None
+    return with_progress(res.data[0]) if res.data else None
 
 
 def db_audit(event: str, user_id: Optional[int] = None, username: Optional[str] = None,
@@ -832,12 +857,21 @@ def unequip_avatar(user: dict = Depends(get_current_user)):
 
 @app.post("/api/v1/me/avatar/win")
 def report_win(body: WinBody, user: dict = Depends(get_current_user)):
-    """Called by the games when the player wins. Levels the equipped avatar up by one."""
-    result = db_rpc("level_up_avatar", {"p_user_id": user["id"], "p_cooldown_seconds": WIN_COOLDOWN_SECONDS})
-    status = (result or {}).get("status")
-    if status == "leveled_up":
-        return {"leveled_up": True, "reason": None, "avatar": db_get_avatar(user["id"])}
-    return {"leveled_up": False, "reason": status, "avatar": db_get_avatar(user["id"]) if status == "cooldown" else None}
+    """Called by the games when the player wins. Gives the equipped avatar 50 XP (and a win).
+    leveled_up is true when that XP pushed the avatar to a new level."""
+    result = db_rpc("add_avatar_xp", {
+        "p_user_id": user["id"], "p_xp": WIN_XP, "p_cooldown_seconds": WIN_COOLDOWN_SECONDS,
+    }) or {}
+    status = result.get("status")
+    avatar = with_progress(result.get("avatar")) if result.get("avatar") else None
+    if status == "xp_gained":
+        return {
+            "xp_gained": WIN_XP,
+            "leveled_up": avatar["level"] > result.get("old_level", avatar["level"]),
+            "reason": None,
+            "avatar": avatar,
+        }
+    return {"xp_gained": 0, "leveled_up": False, "reason": status, "avatar": avatar}
 
 
 # ============================================================
