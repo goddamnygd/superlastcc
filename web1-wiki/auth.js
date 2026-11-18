@@ -103,6 +103,11 @@
     .dbda-toast{position:fixed;left:50%;bottom:28px;z-index:3100;transform:translateX(-50%);max-width:90vw;padding:12px 20px;background:#101114;border:1px solid #c11111;color:#fff;font:800 12px Montserrat,Arial,sans-serif;letter-spacing:.05em;box-shadow:0 8px 30px rgba(0,0,0,.6);animation:dbdaIn .25s ease}
     .dbda-toast.levelup{background:#c11111;font-size:14px}
     .dbda-equip{margin-top:16px}
+    .dbda-prog{margin-top:12px;padding:14px;background:#090909;border:1px solid #242424;font-size:12px;color:#c9cacd}
+    .dbda-prog div.r{display:flex;justify-content:space-between;gap:12px;margin-top:6px}
+    .dbda-bar{height:10px;margin-top:6px;background:#1a1a1a;border:1px solid #2a2a2a}
+    .dbda-bar i{display:block;height:100%;background:#c11111}
+    .dbda-bar.gold i{background:#d9a406}
     @keyframes dbdaIn{from{opacity:0;transform:translate(-50%,10px)}to{opacity:1;transform:translate(-50%,0)}}
     `;
     document.head.append(el("style", {}, css));
@@ -121,7 +126,7 @@
     const navButton = el("button", { class: "dbda-btn", type: "button", onclick: () => open(user ? "account" : "login") }, "LOG IN");
     function paintButton() {
         navButton.textContent = user
-            ? user.username.toUpperCase() + (avatar ? "  ·  LV " + avatar.level : "")
+            ? user.username.toUpperCase() + (avatar ? "  ·  " + (avatar.prestige ? "P" + avatar.prestige + " " : "") + "LV " + avatar.level : "")
             : "LOG IN";
     }
     function mountButton() {
@@ -195,6 +200,41 @@
         );
     }
 
+    const fmt = n => Number(n || 0).toLocaleString("en-US");
+    function bar(percent, cls) {
+        return el("div", { class: "dbda-bar " + (cls || "") }, el("i", { style: "width:" + Math.max(0, Math.min(100, percent)) + "%" }));
+    }
+    function progressView() {
+        const prestige = avatar.prestige, prestigeBonus = avatar.prestige_bonus_xp;
+        const atMax = avatar.level >= avatar.max_level;
+        const levelPct = atMax ? 100 : (avatar.xp_into_level / avatar.xp_for_next_level) * 100;
+        const box = el("div", { class: "dbda-prog" },
+            el("div", { class: "r" }, el("span", {}, avatar.character.name.toUpperCase() + " · PRESTIGE " + prestige + " / 100"),
+                el("span", {}, "+" + fmt(prestigeBonus) + " XP per game from Prestige")),
+            el("div", { class: "r" }, el("span", {}, "XP"),
+                el("span", {}, atMax ? "MAX LEVEL" : fmt(avatar.xp_into_level) + " / " + fmt(avatar.xp_for_next_level))),
+            bar(levelPct),
+            el("div", { class: "r" }, el("span", {}, "PROGRESS TO LEVEL " + avatar.max_level),
+                el("span", {}, avatar.level_progress_percent + "%  (LV " + avatar.level + ")")),
+            bar(avatar.level_progress_percent, "gold"));
+        if (atMax && prestige < 100) {
+            box.append(el("div", { class: "dbda-row" }, el("button", { class: "dbda-b", type: "button", onclick: doPrestige }, "PRESTIGE")));
+        } else if (prestige >= 100) {
+            box.append(el("div", { class: "r" }, el("span", {}, "MAXIMUM PRESTIGE REACHED")));
+        }
+        return box;
+    }
+    async function doPrestige() {
+        if (!confirm("Prestige resets THIS character to level 1 and XP to 0. You keep its wins and it gains +25 XP per game forever. Continue?")) return;
+        try {
+            const r = await api("/me/avatar/prestige", { method: "POST" });
+            avatar = r.avatar;
+            const prestige = avatar.prestige, prestigeBonus = avatar.prestige_bonus_xp;
+            paintButton(); open("account");
+            toast(r.reached_max_prestige ? "MAX PRESTIGE REACHED! Prestige " + prestige : "PRESTIGE " + prestige + "! Now +" + fmt(prestigeBonus) + " XP per game", "levelup");
+        } catch (e) { toast(e.message); }
+    }
+
     function accountView(box) {
         if (!user) return loginView(box);
         const isAdmin = user.role === "admin";
@@ -211,6 +251,7 @@
                     el("strong", {}, c.name),
                     el("span", { class: "dbda-lv" }, "LEVEL " + avatar.level),
                     el("small", {}, avatar.wins + (avatar.wins === 1 ? " win" : " wins") + " · " + c.role))));
+            box.append(progressView());
         } else {
             box.append(el("div", { class: "dbda-avatar" }, el("div", {},
                 el("strong", {}, "NO AVATAR"),
@@ -275,9 +316,13 @@
         if (!token || !user) { toast("Log in and equip an avatar to level up when you win."); return; }
         try {
             const r = await api("/me/avatar/win", { method: "POST", body: { game } });
-            if (r.leveled_up) {
-                avatar = r.avatar; paintButton();
-                toast("LEVEL UP! " + avatar.character.name + " is now level " + avatar.level, "levelup");
+            if (r.avatar) { avatar = r.avatar; paintButton(); }
+            if (r.reached_max_level) {
+                toast("LEVEL " + avatar.max_level + " REACHED! Open your account to Prestige.", "levelup");
+            } else if (r.leveled_up) {
+                toast("LEVEL UP! " + avatar.character.name + " is now level " + avatar.level + " (+" + fmt(r.xp_gained) + " XP)", "levelup");
+            } else if (r.xp_gained) {
+                toast("+" + fmt(r.xp_gained) + " XP");
             } else if (r.reason === "no_avatar") {
                 toast("You won! Equip an avatar on the Wiki to start leveling up.");
             }
