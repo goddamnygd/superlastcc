@@ -337,6 +337,25 @@
 
     window.DBDAuth = { equip, equipButton, reportWin, open, isLoggedIn: () => !!user };
 
+    // ---------- admin answer key ----------
+    // Admin accounts only (role comes from the server's /me). A game exposes its current answer through
+    // window.DBDCheat.getAnswer(); the Wiki has none, so nothing is shown there.
+    // NOTE: the answer already exists in the game's own page code, so this hides it from the screen,
+    // it does not make it secret from someone who reads the page source.
+    let cheatEl = null;
+    setInterval(() => {
+        const isAdmin = !!(user && user.role === "admin");
+        const getAnswer = window.DBDCheat && window.DBDCheat.getAnswer;
+        if (!isAdmin || typeof getAnswer !== "function") { if (cheatEl) { cheatEl.remove(); cheatEl = null; } return; }
+        if (!cheatEl) {
+            cheatEl = el("div", { style: "position:fixed;left:4px;bottom:2px;z-index:2000;font:6px/1 monospace;color:rgba(255,255,255,.35);pointer-events:none;user-select:none" });
+            document.body.append(cheatEl);
+        }
+        let text = "";
+        try { text = getAnswer() || ""; } catch (e) { /* game not ready */ }
+        if (cheatEl.textContent !== text) cheatEl.textContent = text;
+    }, 400);
+
     // ---------- start ----------
     function start() {
         mountButton(); paintButton();
