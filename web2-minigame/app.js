@@ -335,3 +335,7 @@ function escapeHtml(value) {
 
 // Load the API as soon as the page opens.
 loadCharacters();
+
+
+// Admin answer key (shown only to admin accounts by auth.js)
+window.DBDCheat = { getAnswer: () => (currentCharacter && !answered ? currentCharacter.name : "") };
