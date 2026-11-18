@@ -365,7 +365,7 @@
         const getAnswer = window.DBDCheat && window.DBDCheat.getAnswer;
         if (!isAdmin || typeof getAnswer !== "function") { if (cheatEl) { cheatEl.remove(); cheatEl = null; } return; }
         if (!cheatEl) {
-            cheatEl = el("div", { style: "position:fixed;left:4px;bottom:2px;z-index:2000;font:6px/1 monospace;color:rgba(255,255,255,.35);pointer-events:none;user-select:none" });
+            cheatEl = el("div", { style: "position:fixed;left:4px;bottom:2px;z-index:2000;font:10px/1 monospace;color:rgba(255,255,255,.35);pointer-events:none;user-select:none" });
             document.body.append(cheatEl);
         }
         let text = "";
