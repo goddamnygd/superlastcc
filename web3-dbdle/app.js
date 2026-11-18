@@ -567,3 +567,7 @@ document.addEventListener(
 );
 
 loadCharacters();
+
+
+// Admin answer key (shown only to admin accounts by auth.js)
+window.DBDCheat = { getAnswer: () => (answer ? answer.name : "") };
