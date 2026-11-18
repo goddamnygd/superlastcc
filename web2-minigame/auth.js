@@ -8,6 +8,8 @@
     const TOKEN_KEY = "dbd_token";
     const WIKI_URL = "https://superlastcc-web1-wiki.vercel.app/";
 
+    function goLogin(reason) { location.replace("login.html" + (reason ? "?reason=" + reason : "")); }
+
     let token = readToken();
     let user = null;
     let avatar = null;
@@ -58,7 +60,7 @@
             const data = await api("/me");
             user = data.user; avatar = data.avatar;
         } catch (e) {
-            if (e.status === 401) saveToken(null);
+            if (e.status === 401) { saveToken(null); return goLogin("expired"); }
             user = null; avatar = null;
         }
         paintButton();
@@ -222,10 +224,10 @@
             catch (e) { toast(e.message); }
         } }, "REMOVE AVATAR"));
         if (isAdmin) row.append(el("button", { class: "dbda-b ghost", type: "button", onclick: () => open("admin") }, "MANAGE USERS"));
-        row.append(el("button", { class: "dbda-b", type: "button", onclick: () => { saveToken(null); user = null; avatar = null; paintButton(); close(); toast("Logged out."); } }, "LOG OUT"));
+        row.append(el("button", { class: "dbda-b", type: "button", onclick: () => { saveToken(null); user = null; avatar = null; paintButton(); close(); goLogin(); } }, "LOG OUT"));
         row.append(el("button", { class: "dbda-b ghost", type: "button", onclick: async () => {
             try { await api("/auth/logout-all", { method: "POST" }); } catch (e) { /* token may already be dead */ }
-            saveToken(null); user = null; avatar = null; paintButton(); close(); toast("Logged out on all devices.");
+            saveToken(null); user = null; avatar = null; paintButton(); close(); goLogin();
         } }, "LOG OUT EVERYWHERE"));
         box.append(row);
     }
@@ -264,7 +266,7 @@
             avatar = data.avatar; paintButton();
             toast(name + " is now your avatar (level " + avatar.level + ").");
         } catch (e) {
-            if (e.status === 401) { saveToken(null); user = null; paintButton(); open("login"); }
+            if (e.status === 401) { saveToken(null); user = null; return goLogin("expired"); }
             toast(e.message);
         }
     }
@@ -280,7 +282,7 @@
                 toast("You won! Equip an avatar on the Wiki to start leveling up.");
             }
         } catch (e) {
-            if (e.status === 401) { saveToken(null); user = null; paintButton(); }
+            if (e.status === 401) { saveToken(null); user = null; goLogin("expired"); }
         }
     }
 
