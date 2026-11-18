@@ -186,6 +186,7 @@ async function viewCharacter(id) {
 
         // One avatar per account: equipping a new one replaces the old one
         if (window.DBDAuth) {
+            modalBody.appendChild(DBDAuth.progressBox(character.id));
             modalBody.appendChild(DBDAuth.equipButton(character.id, character.name));
         }
 

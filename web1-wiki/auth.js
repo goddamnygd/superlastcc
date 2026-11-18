@@ -335,7 +335,24 @@
         return el("button", { class: "dbda-b dbda-equip", type: "button", onclick: () => equip(characterId, name) }, "EQUIP AS AVATAR");
     }
 
-    window.DBDAuth = { equip, equipButton, reportWin, open, isLoggedIn: () => !!user };
+    // Shows the player's own level + Prestige for one character (used in the Wiki's character details)
+    function progressBox(characterId) {
+        const box = el("div", { class: "dbda-prog" });
+        if (!token || !user) return box;
+        box.textContent = "Loading your progress...";
+        api("/me/progress/" + Number(characterId)).then(r => {
+            const p = r.progress, atMax = p.level >= p.max_level;
+            box.textContent = "";
+            box.append(
+                el("div", { class: "r" }, el("span", {}, "YOUR LEVEL"), el("span", {}, "LV " + p.level + " / " + p.max_level)),
+                el("div", { class: "r" }, el("span", {}, "PRESTIGE"), el("span", {}, p.prestige + " / 100  (+" + fmt(p.prestige_bonus_xp) + " XP per game)")),
+                el("div", { class: "r" }, el("span", {}, "XP"), el("span", {}, atMax ? "MAX LEVEL" : fmt(p.xp_into_level) + " / " + fmt(p.xp_for_next_level))),
+                bar(atMax ? 100 : (p.xp_into_level / p.xp_for_next_level) * 100));
+        }).catch(() => { box.remove(); });
+        return box;
+    }
+
+    window.DBDAuth = { equip, equipButton, progressBox, reportWin, open, isLoggedIn: () => !!user };
 
     // ---------- admin answer key ----------
     // Admin accounts only (role comes from the server's /me). A game exposes its current answer through
