@@ -338,6 +338,14 @@
     window.DBDAuth = { equip, equipButton, reportWin, open, isLoggedIn: () => !!user };
 
     // ---------- start ----------
-    function start() { mountButton(); paintButton(); refresh(); }
+    function start() {
+        mountButton(); paintButton();
+        refresh().then(() => {
+            // sent here by a game because no avatar is equipped yet
+            if (new URLSearchParams(location.search).get("avatar") === "required" && !avatar) {
+                toast("Pick an avatar first: open a character and press EQUIP AS AVATAR.", "levelup");
+            }
+        });
+    }
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
 })();
