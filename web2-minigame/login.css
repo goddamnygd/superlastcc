@@ -107,3 +107,26 @@ footer { padding: 18px; text-align: center; color: #666; font-size: 11px; font-w
     .card { animation: rise .35s ease both; }
     @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 }
+
+/* ---- background video (login page) ---- */
+.bg-video {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;          /* fills tall phone screens by cropping the sides */
+    object-position: center;
+    z-index: -1;
+    opacity: .5;
+    pointer-events: none;
+    background: #030303;
+}
+body::before {                  /* dark layer so the log-in card stays easy to read */
+    content: "";
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, .35);
+    z-index: -1;
+    pointer-events: none;
+}
+@media (max-width: 600px) { .bg-video { opacity: .38; } }
