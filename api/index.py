@@ -584,8 +584,8 @@ class AdminUserUpdate(BaseModel):
 # ============================================================
 # ACCOUNTS: database layer
 # ============================================================
-USER_COLUMNS = "id, username, email, role_id, is_active, token_version, locked_until, last_login_at, created_at, prestige"
-AVATAR_COLUMNS = "xp, level, wins, equipped_at, last_win_at, character:characters(id, name, character_code, role, realm, image)"
+USER_COLUMNS = "id, username, email, role_id, is_active, token_version, locked_until, last_login_at, created_at"
+AVATAR_COLUMNS = "character_id, equipped_at, character:characters(id, name, character_code, role, realm, image)"
 
 
 def public_user(user: dict) -> dict:
@@ -599,8 +599,6 @@ def public_user(user: dict) -> dict:
         "is_active": user["is_active"],
         "created_at": user["created_at"],
         "last_login_at": user.get("last_login_at"),
-        "prestige": user.get("prestige", 0),
-        "prestige_bonus_xp": user.get("prestige", 0) * PRESTIGE_XP_PER_LEVEL,
     }
 
 
@@ -672,12 +670,24 @@ def with_progress(avatar: Optional[dict]) -> Optional[dict]:
         return avatar
     progress = level_progress(avatar["xp"])
     progress.pop("level")   # the stored level is the source of truth
-    return {**avatar, **progress}
+    prestige = avatar.get("prestige", 0)
+    return {**avatar, **progress,
+            "prestige_bonus_xp": prestige * PRESTIGE_XP_PER_LEVEL,
+            "can_prestige": avatar["level"] >= MAX_LEVEL and prestige < MAX_PRESTIGE}
 
 
 def db_get_avatar(user_id: int):
+    """The equipped character together with ITS OWN xp / level / prestige / wins (avatar_progress)."""
     res = run(get_client().table("equipped_avatar").select(AVATAR_COLUMNS).eq("user_id", user_id).limit(1))
-    return with_progress(res.data[0]) if res.data else None
+    if not res.data:
+        return None
+    avatar = res.data[0]
+    prog = run(
+        get_client().table("avatar_progress").select("xp, level, prestige, wins")
+        .eq("user_id", user_id).eq("character_id", avatar["character_id"]).limit(1)
+    ).data
+    prog = prog[0] if prog else {"xp": 0, "level": 1, "prestige": 0, "wins": 0}
+    return with_progress({**avatar, **prog})
 
 
 def db_audit(event: str, user_id: Optional[int] = None, username: Optional[str] = None,
@@ -886,7 +896,7 @@ def unequip_avatar(user: dict = Depends(get_current_user)):
 @app.post("/api/v1/me/avatar/win")
 def report_win(body: WinBody, user: dict = Depends(get_current_user)):
     """Called by the games when the player wins. The server alone decides the XP:
-    base XP (complete + win + objective + performance) plus the permanent Prestige bonus.
+    base XP (complete + win + objective + performance) plus the equipped character's permanent Prestige bonus.
     leveled_up is true when that XP pushed the avatar to a new level (it can be several at once)."""
     result = db_rpc("add_avatar_xp", {
         "p_user_id": user["id"], "p_base_xp": BASE_GAME_XP, "p_cooldown_seconds": WIN_COOLDOWN_SECONDS,
@@ -894,10 +904,7 @@ def report_win(body: WinBody, user: dict = Depends(get_current_user)):
         "p_prestige_xp": PRESTIGE_XP_PER_LEVEL,
     }) or {}
     status = result.get("status")
-    avatar = with_progress(result.get("avatar")) if result.get("avatar") else None
-    prestige = (db_user_by_id(user["id"]) or user).get("prestige", 0)
-    extra = {"prestige": prestige, "prestige_bonus_xp": result.get("prestige_bonus", prestige * PRESTIGE_XP_PER_LEVEL),
-             "can_prestige": bool(avatar and avatar["level"] >= MAX_LEVEL and prestige < MAX_PRESTIGE)}
+    avatar = db_get_avatar(user["id"]) if status in ("xp_gained", "cooldown") else None
     if status == "xp_gained":
         old_level = result.get("old_level", avatar["level"])
         return {
@@ -907,10 +914,9 @@ def report_win(body: WinBody, user: dict = Depends(get_current_user)):
             "reached_max_level": avatar["level"] >= MAX_LEVEL > old_level,
             "reason": None,
             "avatar": avatar,
-            **extra,
         }
     return {"xp_gained": 0, "levels_gained": 0, "leveled_up": False, "reached_max_level": False,
-            "reason": status, "avatar": avatar, **extra}
+            "reason": status, "avatar": avatar}
 
 
 @app.post("/api/v1/me/avatar/prestige")
@@ -930,8 +936,6 @@ def prestige(user: dict = Depends(get_current_user)):
     new_prestige = result["prestige"]
     db_audit("prestige", user["id"], user["username"], f"prestige {new_prestige}")
     return {
-        "prestige": new_prestige,
-        "prestige_bonus_xp": new_prestige * PRESTIGE_XP_PER_LEVEL,
         "reached_max_prestige": new_prestige >= MAX_PRESTIGE,
         "avatar": db_get_avatar(user["id"]),
     }
