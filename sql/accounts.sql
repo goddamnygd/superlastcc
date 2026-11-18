@@ -86,11 +86,13 @@ for each row execute function public.protect_last_admin();
 
 -- ============ equipped avatar ============
 -- user_id is the PRIMARY KEY, so the database itself guarantees one avatar per user.
--- level and wins belong to the equipped avatar. Switching to a different character resets them.
+-- xp, level and wins belong to the equipped avatar. Switching to a different character resets them.
+-- level is worked out from xp by avatar_level_for_xp() (see the leveling rules below).
 create table if not exists public.equipped_avatar (
   user_id       bigint primary key references public.users (id) on delete cascade,
   character_id  bigint not null references public.characters (id) on delete cascade,
-  level         integer not null default 1 check (level >= 1),
+  xp            integer not null default 0 check (xp >= 0),
+  level         integer not null default 0 check (level >= 0),
   wins          integer not null default 0 check (wins >= 0),
   equipped_at   timestamptz not null default now(),
   last_win_at   timestamptz
@@ -180,8 +182,28 @@ end;
 $$;
 
 -- ============ avatar functions ============
+-- Leveling rules: every win gives XP (the API sends 50).
+--   Level 1 needs 100 XP, and each next level needs 1.25 times the XP of the level before:
+--   100, 125, 156, 195, 244 ... (each amount rounded down). XP carries over, nothing is lost.
+create or replace function public.avatar_level_for_xp(p_xp integer)
+returns integer
+language plpgsql immutable set search_path = public as $$
+declare
+  v_level integer := 0;
+  v_left  numeric := greatest(p_xp, 0);
+  v_need  numeric := 100;
+begin
+  while v_left >= floor(v_need) loop
+    v_left  := v_left - floor(v_need);
+    v_level := v_level + 1;
+    v_need  := v_need * 1.25;
+  end loop;
+  return v_level;
+end;
+$$;
+
 -- Equips a character. If the user already has an avatar it is REPLACED (never a second row).
--- Re-equipping the same character keeps its level; a different character starts again at level 1.
+-- Re-equipping the same character keeps its XP and level; a different character starts at 0 XP, level 0.
 create or replace function public.equip_avatar(p_user_id bigint, p_character_id bigint)
 returns jsonb
 language plpgsql set search_path = public as $$
@@ -191,8 +213,10 @@ begin
   insert into public.equipped_avatar (user_id, character_id)
   values (p_user_id, p_character_id)
   on conflict (user_id) do update set
+    xp          = case when equipped_avatar.character_id = excluded.character_id
+                       then equipped_avatar.xp else 0 end,
     level       = case when equipped_avatar.character_id = excluded.character_id
-                       then equipped_avatar.level else 1 end,
+                       then equipped_avatar.level else 0 end,
     wins        = case when equipped_avatar.character_id = excluded.character_id
                        then equipped_avatar.wins else 0 end,
     last_win_at = case when equipped_avatar.character_id = excluded.character_id
@@ -206,30 +230,41 @@ begin
 end;
 $$;
 
--- Adds one level and one win to the equipped avatar, in a single atomic statement.
+-- Adds p_xp experience and one win to the equipped avatar, then recalculates the level.
+-- The row is locked first, so two wins arriving together cannot overwrite each other.
 -- p_cooldown_seconds blocks wins that arrive too fast after the previous one.
--- Returns {"status": "leveled_up" | "no_avatar" | "cooldown", "avatar": {...}}
-create or replace function public.level_up_avatar(p_user_id bigint, p_cooldown_seconds integer)
+-- Returns {"status": "xp_gained" | "no_avatar" | "cooldown", "old_level": n, "avatar": {...}}
+create or replace function public.add_avatar_xp(p_user_id bigint, p_xp integer, p_cooldown_seconds integer)
 returns jsonb
 language plpgsql set search_path = public as $$
 declare
   v_row public.equipped_avatar;
+  v_old integer;
 begin
+  if p_xp is null or p_xp < 1 then
+    raise exception 'p_xp must be at least 1';
+  end if;
+
+  select level into v_old from public.equipped_avatar where user_id = p_user_id for update;
+  if not found then
+    return jsonb_build_object('status', 'no_avatar');
+  end if;
+
   update public.equipped_avatar
-     set level = level + 1, wins = wins + 1, last_win_at = now()
+     set xp = xp + p_xp,
+         wins = wins + 1,
+         last_win_at = now(),
+         level = public.avatar_level_for_xp(xp + p_xp)
    where user_id = p_user_id
      and (last_win_at is null or last_win_at <= now() - make_interval(secs => p_cooldown_seconds))
   returning * into v_row;
 
   if found then
-    return jsonb_build_object('status', 'leveled_up', 'avatar', to_jsonb(v_row));
+    return jsonb_build_object('status', 'xp_gained', 'old_level', v_old, 'avatar', to_jsonb(v_row));
   end if;
 
   select * into v_row from public.equipped_avatar where user_id = p_user_id;
-  if not found then
-    return jsonb_build_object('status', 'no_avatar');
-  end if;
-  return jsonb_build_object('status', 'cooldown', 'avatar', to_jsonb(v_row));
+  return jsonb_build_object('status', 'cooldown', 'old_level', v_old, 'avatar', to_jsonb(v_row));
 end;
 $$;
 
@@ -256,7 +291,8 @@ begin
                            public.change_password(bigint, text),
                            public.revoke_tokens(bigint),
                            public.equip_avatar(bigint, bigint),
-                           public.level_up_avatar(bigint, integer)
+                           public.avatar_level_for_xp(integer),
+                           public.add_avatar_xp(bigint, integer, integer)
       from public, anon, authenticated;
 
     grant execute on function public.record_failed_login(bigint, integer, integer),
@@ -264,7 +300,8 @@ begin
                               public.change_password(bigint, text),
                               public.revoke_tokens(bigint),
                               public.equip_avatar(bigint, bigint),
-                              public.level_up_avatar(bigint, integer)
+                              public.avatar_level_for_xp(integer),
+                              public.add_avatar_xp(bigint, integer, integer)
       to service_role;
   end if;
 end

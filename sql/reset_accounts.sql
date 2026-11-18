@@ -14,6 +14,8 @@ drop function if exists public.change_password(bigint, text);
 drop function if exists public.revoke_tokens(bigint);
 drop function if exists public.equip_avatar(bigint, bigint);
 drop function if exists public.level_up_avatar(bigint, integer);
+drop function if exists public.add_avatar_xp(bigint, integer, integer);
+drop function if exists public.avatar_level_for_xp(integer);
 drop function if exists public.protect_last_admin();
 -- set_updated_at() is shared with the characters table, so it is NOT dropped.
 
