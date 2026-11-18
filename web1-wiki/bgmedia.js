@@ -1,4 +1,4 @@
-/* Background media shared by the Wiki, Minigame and DBDle sites (identical file in each site folder).
+/* Background media shared by the Wiki, Minigame and DBDle sites.
    1) Login pages: plays a random background video (the <video id="bgVideo"> tag in login.html).
    2) Every page: loops the background music, with a small mute button. The mute choice and the song
       position are remembered, so the music carries on from page to page of the same site.
@@ -7,10 +7,8 @@
 (function () {
     "use strict";
 
-    // ---- SETTINGS: the only part you edit -------------------------------------------------------
-    // Where the files live. This points at the `backgorund` folder of your PUBLIC GitHub repo through
-    // jsDelivr. Replace YOUR-GITHUB-USER / YOUR-REPO (and the branch, if it is not "main").
-    var MEDIA_BASE = "https://cdn.jsdelivr.net/gh/YOUR-GITHUB-USER/YOUR-REPO@main/backgorund/";
+   
+    var MEDIA_BASE = "https://cdn.jsdelivr.net/gh/goddamnygd/superlastcc@main/backgorund/";
     var VIDEOS = ["bg-1.mp4", "bg-2.mp4", "bg-3.mp4", "bg-4.mp4", "bg-5.mp4"];
     var MUSIC = "bg_music.mp3";
     var MUSIC_VOLUME = 0.35;   // 0 to 1
