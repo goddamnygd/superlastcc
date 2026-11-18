@@ -878,6 +878,17 @@ def get_my_avatar(user: dict = Depends(get_current_user)):
     return {"avatar": db_get_avatar(user["id"])}
 
 
+@app.get("/api/v1/me/progress/{character_id}")
+def get_character_progress(character_id: int, user: dict = Depends(get_current_user)):
+    """The logged-in player's own level / Prestige / XP on ONE character (level 1 if never played)."""
+    rows = run(
+        get_client().table("avatar_progress").select("xp, level, prestige, wins")
+        .eq("user_id", user["id"]).eq("character_id", character_id).limit(1)
+    ).data
+    prog = rows[0] if rows else {"xp": 0, "level": 1, "prestige": 0, "wins": 0}
+    return {"character_id": character_id, "progress": with_progress(prog)}
+
+
 @app.put("/api/v1/me/avatar")
 def equip_avatar(body: EquipBody, user: dict = Depends(get_current_user)):
     """Equip a character. Replaces the current avatar if there is one."""
