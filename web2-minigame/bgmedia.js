@@ -11,7 +11,7 @@
     // Where the files live. This points at the `backgorund` folder of your PUBLIC GitHub repo through
     // jsDelivr. Replace YOUR-GITHUB-USER / YOUR-REPO (and the branch, if it is not "main").
     var MEDIA_BASE = "https://cdn.jsdelivr.net/gh/goddamnygd/superlastcc@main/backgorund/";
-    var VIDEOS = ["bg-1.mp4", "bg-2.mp4", "bg-3.mp4", "bg-4.mp4", "bg-5.mp4", "bg-6", "bg-7", "bg-8", "bg-9", "bg-10", "bg-11", "bg-12"];
+    var VIDEOS = ["bg-1.mp4", "bg-2.mp4", "bg-3.mp4", "bg-4.mp4", "bg-5.mp4", "bg-6.mp4", "bg-7.mp4", "bg-8.mp4", "bg-9.mp4", "bg-10.mp4", "bg-11.mp4", "bg-12.mp4"];
     var MUSIC = "bg_music.mp3";
     var MUSIC_VOLUME = 0.35;  // 0 to 1
     // ---------------------------------------------------------------------------------------------
