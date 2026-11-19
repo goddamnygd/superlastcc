@@ -3,6 +3,7 @@
     "use strict";
     var API = "https://superlastcc.vercel.app/api/v1";
     var TOKEN_KEY = "dbd_token";
+    var GUEST_KEY = "dbd_guest";
 
     var $ = function (id) { return document.getElementById(id); };
     var tabs = { login: $("tabLogin"), register: $("tabRegister") };
@@ -70,6 +71,7 @@
     });
 
     function finish(data) {
+        try { localStorage.removeItem(GUEST_KEY); } catch (e) { /* ignore */ }   // a real account replaces guest mode
         if (!data.token || !saveToken(data.token)) {
             throw new Error("Your browser blocked saving the login. Turn off private mode or allow site data, then try again.");
         }
@@ -98,6 +100,20 @@
         if (v.password !== v.confirm) throw new Error("The two passwords do not match.");
         finish(await post("/auth/register", { username: username, email: v.email.trim(), password: v.password }));
     });
+
+    // Continue as guest
+    var guestBtn = $("guestBtn");
+    if (guestBtn) {
+        guestBtn.addEventListener("click", function () {
+            try { localStorage.setItem(GUEST_KEY, "1"); }
+            catch (e) {
+                $("notice").textContent = "Your browser blocked saving guest mode. Turn off private mode or allow site data, then try again.";
+                $("notice").hidden = false;
+                return;
+            }
+            location.replace(safeNext());
+        });
+    }
 
     // Messages from the gate
     if (params.get("reason") === "expired") {

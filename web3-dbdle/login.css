@@ -179,3 +179,14 @@ footer {
     @keyframes slide { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: none; } }
     @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
 }
+
+
+/* ---- continue as guest ---- */
+.guest-box { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); text-align: center; }
+.guest-note { margin-bottom: 12px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.guest-btn {
+    width: 100%; min-height: 46px; background: transparent; border: 1px solid rgba(255,255,255,.3); border-radius: 12px;
+    color: var(--white); font: 900 11px "Montserrat", Arial, sans-serif; letter-spacing: .14em; cursor: pointer;
+    transition: background .15s, color .15s;
+}
+.guest-btn:hover { background: var(--white); color: #000; }

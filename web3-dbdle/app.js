@@ -66,6 +66,14 @@ async function loadCharacters() {
 
         configureMode();
         fillCharacterNames();
+
+        // Guests can play each mode once, then they must sign up
+        if (!guestAllowed(() => { window.location.href = "index.html#modes"; })) {
+            guessInput.placeholder = "SIGN UP TO KEEP PLAYING";
+            guessInput.disabled = true;
+            return;
+        }
+
         startRound();
     }
 
@@ -74,6 +82,10 @@ async function loadCharacters() {
         guessInput.placeholder = "API COULD NOT BE LOADED";
         guessInput.disabled = true;
     }
+}
+
+function guestAllowed(onBack) {
+    return !window.DBDAuth || DBDAuth.guestAllow("dbdle:" + selectedMode, onBack);
 }
 
 function configureMode() {
@@ -528,6 +540,10 @@ playAgainBtn.addEventListener(
     "click",
 
     () => {
+        if (!guestAllowed()) {
+            return;
+        }
+
         resultPanel.classList.add(
             "hidden"
         );

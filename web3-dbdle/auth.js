@@ -7,12 +7,18 @@
     const API = "https://superlastcc.vercel.app/api/v1";
     const TOKEN_KEY = "dbd_token";
     const WIKI_URL = "https://superlastcc-web1-wiki.vercel.app/";
+    const GUEST_KEY = "dbd_guest";
+    const GUEST_PLAYS_KEY = "dbd_guest_plays";
 
     function goLogin(reason) { location.replace("login.html" + (reason ? "?reason=" + reason : "")); }
 
     let token = readToken();
     let user = null;
     let avatar = null;
+
+    // A guest is simply a visitor with no login token (gate.js only lets them in if they chose guest mode).
+    // Guests get no avatar and no leveling, and can play each game mode once.
+    function isGuest() { return !token; }
 
     // ---------- storage ----------
     function readToken() { try { return localStorage.getItem(TOKEN_KEY); } catch (e) { return null; } }
@@ -169,6 +175,7 @@
     }
 
     async function afterAuth(data) {
+        try { localStorage.removeItem(GUEST_KEY); } catch (e) { /* ignore */ }
         saveToken(data.token);
         await refresh();
         close();
@@ -178,7 +185,7 @@
     function loginView(box) {
         box.append(
             el("h2", {}, "LOG IN"),
-            el("p", { class: "sub" }, "Log in to equip an avatar and level it up by winning games."),
+            el("p", { class: "sub" }, "Welcome back. Log in to your account."),
             form(async v => afterAuth(await api("/auth/login", { method: "POST", body: { identifier: v.identifier, password: v.password } })),
                 "LOG IN",
                 [field("USERNAME OR EMAIL", "text", "identifier", { autocomplete: "username" }),
@@ -313,6 +320,7 @@
     }
 
     async function reportWin(game) {
+        if (isGuest()) return;   // guests do not level anything
         if (!token || !user) { toast("Log in and equip an avatar to level up when you win."); return; }
         try {
             const r = await api("/me/avatar/win", { method: "POST", body: { game } });
@@ -332,12 +340,14 @@
     }
 
     function equipButton(characterId, name) {
+        if (isGuest()) return el("span");   // guests do not see the avatar / leveling feature
         return el("button", { class: "dbda-b dbda-equip", type: "button", onclick: () => equip(characterId, name) }, "EQUIP AS AVATAR");
     }
 
     // Shows the player's own level + Prestige for one character (used in the Wiki's character details)
     function progressBox(characterId) {
         const box = el("div", { class: "dbda-prog" });
+        if (isGuest()) return el("span");
         if (!token || !user) return box;
         box.textContent = "Loading your progress...";
         api("/me/progress/" + Number(characterId)).then(r => {
@@ -352,7 +362,54 @@
         return box;
     }
 
-    window.DBDAuth = { equip, equipButton, progressBox, reportWin, open, isLoggedIn: () => !!user };
+    // ---------- guest limit: one round per game mode, then a sign-up pop-up ----------
+    // The count is kept in this browser only, so it is a soft limit (clearing site data resets it).
+    const memPlays = {};
+    function readPlays() {
+        try { return Object.assign({}, JSON.parse(localStorage.getItem(GUEST_PLAYS_KEY)) || {}, memPlays); }
+        catch (e) { return Object.assign({}, memPlays); }
+    }
+    function markPlayed(key) {
+        memPlays[key] = 1;
+        try { const p = readPlays(); p[key] = 1; localStorage.setItem(GUEST_PLAYS_KEY, JSON.stringify(p)); } catch (e) { /* kept in memory */ }
+    }
+
+    let wall = null;
+    function signupWall(onBack) {
+        if (wall) return;
+        const file = location.pathname.split("/").pop() || "index.html";
+        const base = "login.html?next=" + encodeURIComponent(file + location.search);
+        const linkStyle = "display:inline-flex;align-items:center;text-decoration:none;color:#fff";
+        const dismiss = () => {
+            if (!wall) return;
+            wall.remove(); wall = null;
+            document.removeEventListener("keydown", onKey);
+            if (typeof onBack === "function") onBack();
+        };
+        const onKey = e => { if (e.key === "Escape") dismiss(); };
+        const box = el("div", { class: "dbda-box", role: "dialog", "aria-modal": "true", "aria-label": "Sign up to continue" },
+            el("button", { class: "dbda-x", type: "button", "aria-label": "Close", onclick: dismiss }, "×"),
+            el("h2", {}, "SIGN UP TO CONTINUE"),
+            el("p", { class: "sub" }, "You have used your free guest round for this mode. Create a free account to keep playing."),
+            el("div", { class: "dbda-row" },
+                el("a", { class: "dbda-b", href: base + "#register", style: linkStyle }, "CREATE ACCOUNT"),
+                el("a", { class: "dbda-b ghost", href: base, style: linkStyle }, "LOG IN"),
+                el("button", { class: "dbda-b ghost", type: "button", onclick: dismiss }, "NOT NOW")));
+        wall = el("div", { class: "dbda-overlay", style: "z-index:3200", onmousedown: e => { if (e.target === wall) dismiss(); } }, box);
+        document.body.append(wall);
+        document.addEventListener("keydown", onKey);
+    }
+
+    // Call before starting a round. Logged-in players always pass. A guest passes once per key
+    // (e.g. "minigame:perks", "dbdle:killer"); after that the sign-up pop-up shows and this returns false.
+    function guestAllow(key, onBack) {
+        if (!isGuest()) return true;
+        if (readPlays()[key]) { signupWall(onBack); return false; }
+        markPlayed(key);
+        return true;
+    }
+
+    window.DBDAuth = { equip, equipButton, progressBox, reportWin, open, guestAllow, isGuest, isLoggedIn: () => !!user };
 
     // ---------- admin answer key ----------
     // Admin accounts only (role comes from the server's /me). A game exposes its current answer through
@@ -375,6 +432,12 @@
 
     // ---------- start ----------
     function start() {
+        if (isGuest()) {
+            // keep guest mode when jumping to another DBD site (each site is its own domain)
+            document.querySelectorAll(".site-switch-link").forEach(a => {
+                try { const u = new URL(a.href); u.searchParams.set("guest", "1"); a.href = u.toString(); } catch (e) { /* ignore */ }
+            });
+        }
         mountButton(); paintButton();
         refresh().then(() => {
             // sent here by a game because no avatar is equipped yet

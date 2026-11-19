@@ -5,6 +5,7 @@
     "use strict";
     var API = "https://superlastcc.vercel.app/api/v1";
     var TOKEN_KEY = "dbd_token";
+    var GUEST_KEY = "dbd_guest";   // "1" = the visitor chose "Continue as guest" on this site
     var WIKI_URL = "https://superlastcc-web1-wiki.vercel.app/";
     var root = document.documentElement;
     // Pages that need an equipped avatar (the two games) load this as: <script src="gate.js" data-require-avatar>
@@ -13,6 +14,12 @@
     function getToken() { try { return localStorage.getItem(TOKEN_KEY); } catch (e) { return null; } }
     function clearToken() { try { localStorage.removeItem(TOKEN_KEY); } catch (e) { /* ignore */ } }
     function reveal() { root.style.visibility = ""; }
+    function isGuest() { try { return localStorage.getItem(GUEST_KEY) === "1"; } catch (e) { return false; } }
+    // Links from another DBD site for a guest carry ?guest=1, so they do not have to pick "guest" again
+    function guestLink() {
+        if (!/[?&]guest=1(&|$)/.test(location.search)) return false;
+        try { localStorage.setItem(GUEST_KEY, "1"); return true; } catch (e) { return false; }
+    }
 
     function toLogin(reason) {
         var file = location.pathname.split("/").pop() || "index.html";
@@ -22,7 +29,11 @@
     }
 
     var token = getToken();
-    if (!token) { root.style.visibility = "hidden"; toLogin(); return; }
+    if (!token) {
+        // Guest: no login needed. The page stays visible, and the games do not require an avatar.
+        if (isGuest() || guestLink()) return;
+        root.style.visibility = "hidden"; toLogin(); return;
+    }
 
     // Hide the page until the API confirms the token (a deleted, disabled or logged-out account fails here)
     root.style.visibility = "hidden";

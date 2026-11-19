@@ -107,6 +107,11 @@ function startGame() {
         return;
     }
 
+    // Guests can play each mode once, then they must sign up
+    if (window.DBDAuth && !DBDAuth.guestAllow("minigame:" + currentMode)) {
+        return;
+    }
+
     lives = 3;
     answered = false;
     gameMessage.textContent = "";
