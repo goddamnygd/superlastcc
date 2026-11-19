@@ -835,3 +835,16 @@ button {
         flex-wrap: wrap;
     }
 }
+
+
+/* ================= UI REFRESH (shared header) ================= */
+.topbar {
+    background: rgba(8,8,10,.72) !important;
+    -webkit-backdrop-filter: blur(14px) saturate(1.2);
+    backdrop-filter: blur(14px) saturate(1.2);
+    border-bottom: 1px solid rgba(255,255,255,.1) !important;
+}
+.scratch { color: #ff3b3b; }
+.site-switcher { gap: 6px; }
+.site-switch-link { border-radius: 999px; padding: 7px 12px; }
+.site-switch-link.active { box-shadow: 0 4px 16px rgba(209,15,15,.4); }

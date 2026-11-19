@@ -13,13 +13,13 @@
     var MEDIA_BASE = "https://cdn.jsdelivr.net/gh/goddamnygd/superlastcc@main/backgorund/";
     var VIDEOS = ["bg-1.mp4", "bg-2.mp4", "bg-3.mp4", "bg-4.mp4", "bg-5.mp4"];
     var MUSIC = "bg_music.mp3";
-    var MUSIC_VOLUME = 0.35;   // 0 to 1
+    var MUSIC_VOLUME = 0.35;  // 0 to 1
     // ---------------------------------------------------------------------------------------------
 
     function get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
     function set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* storage blocked */ } }
 
-    // ===== login page video =====
+    // ===== login page video: plays a random clip, then fades into a different random one =====
     var video = document.getElementById("bgVideo");
     if (video && VIDEOS.length) {
         var reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -27,13 +27,43 @@
         if (reduce || saveData) {
             video.remove();                       // plain dark background instead
         } else {
-            var last = Number(get("bgLast"));
-            var i;
-            do { i = Math.floor(Math.random() * VIDEOS.length); } while (VIDEOS.length > 1 && i === last);
-            set("bgLast", String(i));
+            var FADE_MS = 900;                    // fade in / out time
+            var current = Number(get("bgLast"));
+            var failures = 0, fadingOut = false;
+            video.loop = false;                   // we pick the next clip ourselves
+            video.removeAttribute("loop");
             video.muted = true;
-            video.src = MEDIA_BASE + VIDEOS[i];
-            video.play().catch(function () { /* e.g. low-power mode: the dark background stays */ });
+            video.style.transition = "opacity " + FADE_MS + "ms ease";
+            video.style.opacity = "0";
+
+            var pickNext = function () {
+                var i;
+                do { i = Math.floor(Math.random() * VIDEOS.length); } while (VIDEOS.length > 1 && i === current);
+                return i;
+            };
+            var playClip = function (i) {
+                current = i; fadingOut = false;
+                set("bgLast", String(i));
+                video.src = MEDIA_BASE + VIDEOS[i];
+                video.play().catch(function () { /* e.g. low-power mode: the dark background stays */ });
+            };
+            var fadeToNext = function () {
+                if (fadingOut) return;
+                fadingOut = true;
+                video.style.opacity = "0";
+                setTimeout(function () { playClip(pickNext()); }, FADE_MS);
+            };
+
+            video.addEventListener("playing", function () { failures = 0; video.style.opacity = ""; });   // fade in
+            video.addEventListener("timeupdate", function () {                                              // start fading just before the end
+                if (video.duration && video.duration - video.currentTime < FADE_MS / 1000 + 0.15) fadeToNext();
+            });
+            video.addEventListener("ended", fadeToNext);
+            video.addEventListener("error", function () {                                                   // a clip failed: try another, but not forever
+                if (++failures <= VIDEOS.length) playClip(pickNext());
+            });
+
+            playClip(pickNext());
         }
     }
 
@@ -44,7 +74,11 @@
     audio.preload = "auto";
 
     var muted = get("bgMusicMuted") === "1";
-    var saved = parseFloat(get("bgMusicTime"));
+    // A refresh (F5 / reload button) restarts the song. Moving between pages keeps playing from where it was.
+    var nav = (window.performance && performance.getEntriesByType) ? performance.getEntriesByType("navigation")[0] : null;
+    var isReload = nav ? nav.type === "reload" : (window.performance && performance.navigation && performance.navigation.type === 1);
+    if (isReload) set("bgMusicTime", "0");
+    var saved = isReload ? 0 : parseFloat(get("bgMusicTime"));
     var restored = false;
     audio.addEventListener("loadedmetadata", function () {
         if (!restored && isFinite(saved) && saved > 0 && saved < audio.duration) { try { audio.currentTime = saved; } catch (e) { /* ignore */ } }
