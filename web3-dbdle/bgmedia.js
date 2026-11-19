@@ -1,9 +1,3 @@
-/* Background media shared by the Wiki, Minigame and DBDle sites (identical file in each site folder).
-   1) Login pages: plays a random background video (the <video id="bgVideo"> tag in login.html).
-   2) Every page: loops the background music, with a small mute button. The mute choice and the song
-      position are remembered, so the music carries on from page to page of the same site.
-   Browsers block sound until the visitor clicks or taps once, so the music starts on the first
-   click, tap or key press when it can't start by itself. */
 (function () {
     "use strict";
 
