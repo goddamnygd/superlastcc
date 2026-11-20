@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Dead bai Daylight - The Trial: escape the Killer with your levelled-up Survivor">
+    <title>Dead bai Daylight - The Trial</title>
+    <script src="gate.js" data-require-avatar></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header class="topbar">
+        <a class="brand" href="./" aria-label="Home">
+            <span class="dbd-logo">DEAD BAI<br>DAYLIGHT <span class="scratch">|||||</span></span>
+            <span class="brand-divider"></span>
+            <span class="minigame-title">THE TRIAL</span>
+        </a>
+
+        <button id="menuBtn" class="menu-btn" aria-label="Open menu">☰</button>
+
+        <nav id="navMenu" class="nav-menu">
+            <div class="site-switcher" aria-label="DBD websites">
+                <a class="site-switch-link" href="https://superlastcc-web1-wiki.vercel.app/">WIKI</a>
+                <a class="site-switch-link" href="https://superlastcc-web2-minigame.vercel.app/">MINIGAME</a>
+                <a class="site-switch-link" href="https://superlastcc-web3-dbdle.vercel.app/">DBDLE</a>
+                <a class="site-switch-link active" href="https://superlastcc-web4-trial.vercel.app/">TRIAL</a>
+            </div>
+        </nav>
+    </header>
+
+    <main class="trial-page">
+        <p id="loading" class="trial-note">Entering the fog…</p>
+
+        <!-- LOBBY: shown when no run is active -->
+        <section id="lobby" class="trial-lobby hidden">
+            <p class="kicker">SURVIVOR ESCAPE</p>
+            <h1>ESCAPE THE TRIAL</h1>
+            <p class="lead">
+                Repair three generators before the Killer catches you. Level up your avatar in the
+                Minigame and DBDle: a stronger avatar repairs faster, is harder to find and unlocks its perks as moves.
+            </p>
+
+            <div id="avatarCard" class="avatar-card"></div>
+            <div id="perkRow" class="perk-row"></div>
+            <div id="statsRow" class="stats-row"></div>
+
+            <p id="lobbyNote" class="trial-note"></p>
+            <div class="lobby-actions">
+                <button id="startBtn" class="primary-btn" type="button">ENTER THE TRIAL</button>
+            </div>
+        </section>
+
+        <!-- THE TRIAL -->
+        <section id="arena" class="arena hidden" aria-live="polite">
+            <div class="arena-head">
+                <div class="killer-card">
+                    <img id="killerImage" alt="">
+                    <div>
+                        <span class="tag">THE KILLER</span>
+                        <strong id="killerName"></strong>
+                        <small id="killerMeta"></small>
+                    </div>
+                </div>
+                <div class="turn-box">
+                    <span>TURN</span>
+                    <strong id="turnCount">0</strong>
+                </div>
+            </div>
+
+            <div class="gauges">
+                <div class="gauge">
+                    <span class="tag">GENERATORS</span>
+                    <div id="genPips" class="pips"></div>
+                    <div class="bar"><i id="genBar"></i></div>
+                </div>
+                <div class="gauge">
+                    <span class="tag">HEALTH</span>
+                    <div id="hpPips" class="pips hp"></div>
+                    <div id="statusChips" class="chips-row"></div>
+                </div>
+                <div class="gauge">
+                    <span class="tag">HEARTBEAT</span>
+                    <div id="heartbeat" class="heartbeat" aria-label="Heartbeat"></div>
+                    <small id="heartbeatLabel" class="hb-label"></small>
+                </div>
+            </div>
+
+            <ul id="log" class="log"></ul>
+
+            <div id="actions" class="actions"></div>
+            <p id="arenaMessage" class="trial-note" role="status"></p>
+
+            <button id="abandonBtn" class="link-btn" type="button">ABANDON TRIAL</button>
+        </section>
+
+        <!-- RESULT -->
+        <section id="result" class="result hidden">
+            <p id="resultKicker" class="kicker"></p>
+            <h2 id="resultTitle"></h2>
+            <p id="resultText" class="lead"></p>
+            <ul id="resultLog" class="log"></ul>
+            <div class="lobby-actions">
+                <button id="againBtn" class="primary-btn" type="button">ENTER AGAIN</button>
+                <button id="lobbyBtn" class="secondary-btn" type="button">BACK TO LOBBY</button>
+            </div>
+        </section>
+    </main>
+
+    <script src="auth.js"></script>
+    <script src="trial.js"></script>
+    <script src="bgmedia.js"></script>
+</body>
+</html>
