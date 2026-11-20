@@ -33,9 +33,9 @@
 
         <!-- LOBBY: shown when no run is active -->
         <section id="lobby" class="trial-lobby hidden">
-            <p class="kicker">SURVIVOR ESCAPE</p>
-            <h1>ESCAPE THE TRIAL</h1>
-            <p class="lead">
+            <p id="lobbyKicker" class="kicker">SURVIVOR ESCAPE</p>
+            <h1 id="lobbyTitle">ESCAPE THE TRIAL</h1>
+            <p id="lobbyLead" class="lead">
                 Repair three generators before the Killer catches you. Level up your avatar in the
                 Minigame and DBDle: a stronger avatar repairs faster, is harder to find and unlocks its perks as moves.
             </p>
@@ -56,7 +56,7 @@
                 <div class="killer-card">
                     <img id="killerImage" alt="">
                     <div>
-                        <span class="tag">THE KILLER</span>
+                        <span id="killerTag" class="tag">THE KILLER</span>
                         <strong id="killerName"></strong>
                         <small id="killerMeta"></small>
                     </div>
@@ -67,7 +67,28 @@
                 </div>
             </div>
 
-            <div class="gauges">
+            <!-- HUNT (Killer avatar) -->
+            <div class="gauges hunt-only">
+                <div class="gauge">
+                    <span class="tag">GENERATORS (THEIR PROGRESS)</span>
+                    <div id="huntGenPips" class="pips"></div>
+                    <div class="bar"><i id="huntGenBar"></i></div>
+                </div>
+                <div class="gauge">
+                    <span class="tag">SACRIFICES</span>
+                    <div id="sacPips" class="pips hp"></div>
+                    <small id="sacLabel" class="hb-label"></small>
+                </div>
+                <div class="gauge">
+                    <span class="tag">YOUR POWER</span>
+                    <strong id="powerName" class="power-name"></strong>
+                    <small id="powerStatus" class="hb-label"></small>
+                </div>
+            </div>
+            <div id="survivorGrid" class="survivor-grid hunt-only"></div>
+
+            <!-- ESCAPE (Survivor avatar) -->
+            <div class="gauges escape-only">
                 <div class="gauge">
                     <span class="tag">GENERATORS</span>
                     <div id="genPips" class="pips"></div>

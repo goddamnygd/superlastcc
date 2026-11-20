@@ -22,6 +22,7 @@ from supabase import Client, create_client
 # how the platform starts the app. (Files starting with "_" are not served as endpoints.)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _games  # noqa: E402
+import _hunt  # noqa: E402
 import _trial  # noqa: E402
 
 # ============================================================
@@ -1094,7 +1095,8 @@ def admin_round_answer(round_id: UUID, admin: dict = Depends(require_admin)):
 # The browser sends the action it chose and the turn it was looking at; the server rolls the dice,
 # saves the result and sends back only what the player may see (see _trial.public_view).
 # The Trial gives no XP: levels come from the training games, the Trial is where they pay off.
-# Killer avatars (Hunt mode) are not available yet.
+# The equipped avatar decides the mode: a Survivor plays Escape (api/_trial.py), a Killer plays
+# Hunt (api/_hunt.py). To play the other side, equip a different character.
 # ============================================================
 def db_active_trial(user_id: int):
     rows = run(
@@ -1104,23 +1106,34 @@ def db_active_trial(user_id: int):
     return rows[0] if rows else None
 
 
+def trial_engine(mode: str):
+    """The rules module for a mode: Escape for Survivors, Hunt for Killers."""
+    return _hunt if mode == "hunt" else _trial
+
+
+def mode_for_role(role: str) -> str:
+    return "hunt" if role == "Killer" else "escape"
+
+
 def trial_payload(run_id: str, state: dict) -> dict:
-    return {"id": run_id, **_trial.public_view(state)}
+    mode = state.get("mode", "escape")
+    return {"id": run_id, "mode": mode, **trial_engine(mode).public_view(state)}
 
 
 @app.get("/api/v1/trial/current")
 def trial_current(user: dict = Depends(get_current_user)):
-    """The active run if there is one, plus whether the equipped avatar can play and why not."""
+    """The active run if there is one, plus which mode the equipped avatar plays."""
     active = db_active_trial(user["id"])
     avatar = db_get_avatar(user["id"])
-    can_play, reason = True, None
+    can_play, reason, mode = True, None, None
     if avatar is None:
-        can_play, reason = False, "Equip a Survivor on the Wiki to enter a trial."
-    elif avatar["character"]["role"] != "Survivor":
-        can_play, reason = False, "Hunt mode for Killer avatars is coming soon. Equip a Survivor to play Escape."
+        can_play, reason = False, "Equip a character on the Wiki to enter a trial."
+    else:
+        mode = mode_for_role(avatar["character"]["role"])
     return {
         "run": trial_payload(active["id"], active["state"]) if active else None,
         "can_play": can_play, "reason": reason,
+        "mode": mode,
         "avatar": avatar,
         "bonus_cap_percent": round((_trial.MAX_LEVEL_BONUS + _trial.MAX_PRESTIGE_BONUS) * 100),
         "perk_unlock_levels": _trial.PERK_UNLOCK_LEVELS,
@@ -1131,23 +1144,32 @@ def trial_current(user: dict = Depends(get_current_user)):
 def trial_start(user: dict = Depends(get_current_user)):
     avatar = db_get_avatar(user["id"])
     if avatar is None:
-        raise HTTPException(status_code=409, detail="Equip a Survivor on the Wiki first.")
-    if avatar["character"]["role"] != "Survivor":
-        raise HTTPException(status_code=409, detail="Hunt mode for Killer avatars is coming soon. Equip a Survivor to play Escape.")
-    survivor = db_get(avatar["character_id"])
-    killers = [c for c in db_all_characters() if c["role"] == "Killer"]
-    if survivor is None or not killers:
-        raise HTTPException(status_code=404, detail="No opponent is available.")
+        raise HTTPException(status_code=409, detail="Equip a character on the Wiki first.")
+    mode = mode_for_role(avatar["character"]["role"])
+    me = db_get(avatar["character_id"])
+    if me is None:
+        raise HTTPException(status_code=404, detail="Your avatar could not be found.")
+    everyone = db_all_characters()
+    seed = secrets.token_hex(16)
+    rng = secrets.SystemRandom()          # the opponents and the seed cannot be predicted
 
-    # SystemRandom: the Killer and the seed cannot be predicted
-    killer = secrets.SystemRandom().choice(killers)
-    state = _trial.new_run(killer, survivor, avatar["level"], avatar.get("prestige", 0),
-                           secrets.token_hex(16), MAX_LEVEL)
+    if mode == "escape":
+        killers = [c for c in everyone if c["role"] == "Killer"]
+        if not killers:
+            raise HTTPException(status_code=404, detail="No opponent is available.")
+        state = _trial.new_run(rng.choice(killers), me, avatar["level"], avatar.get("prestige", 0), seed, MAX_LEVEL)
+    else:
+        survivors = [c for c in everyone if c["role"] == "Survivor"]
+        if len(survivors) < _hunt.SURVIVOR_COUNT:
+            raise HTTPException(status_code=404, detail="Not enough Survivors for a hunt.")
+        state = _hunt.new_run(me, rng.sample(survivors, _hunt.SURVIVOR_COUNT),
+                              avatar["level"], avatar.get("prestige", 0), seed, MAX_LEVEL)
+
     result = db_rpc("trial_start", {
-        "p_user_id": user["id"], "p_character_id": survivor["id"], "p_mode": "escape", "p_state": state,
+        "p_user_id": user["id"], "p_character_id": me["id"], "p_mode": mode, "p_state": state,
     }) or {}
     if result.get("status") != "ok":
-        raise HTTPException(status_code=409, detail="Equip a Survivor on the Wiki first.")
+        raise HTTPException(status_code=409, detail="Equip a character on the Wiki first.")
     return {"run": trial_payload(result["run_id"], state)}
 
 
@@ -1160,7 +1182,7 @@ def trial_action(body: TrialActionBody, user: dict = Depends(get_current_user)):
     if body.turn != state["turn"]:
         raise HTTPException(status_code=409, detail="Your screen is out of date. Reload the trial.")
     try:
-        _trial.step(state, body.action)
+        trial_engine(active["mode"]).step(state, body.action)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))     # the turn is NOT used up
     result = db_rpc("trial_apply", {

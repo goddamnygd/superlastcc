@@ -13,7 +13,22 @@
     };
 
     const HEARTBEAT = ["SILENT", "FAINT", "POUNDING", "CHASE"];
+    const HUNT_TEXT = {
+        won: ["THE ENTITY IS PLEASED", "YOU CLAIMED THEM"],
+        sacrificed: ["SACRIFICED", "Three Survivors were offered to the Entity. The hunt is yours."],
+        gates_open: ["THEY ESCAPED", "The last generator roared to life and the gates opened. They got away."],
+        out_of_time: ["LOST IN THE FOG", "You took too long. The Survivors slipped away into the fog."]
+    };
+    const STATUS_LABEL = { healthy: "HEALTHY", injured: "INJURED", hooked: "HOOKED", dead: "SACRIFICED" };
     const HELP = {
+        patrol: "Search for a Survivor to chase. Might find no one.",
+        chase: "Attack the Survivor you are chasing. A healthy one gets injured, an injured one is hooked.",
+        camp: "Wait beside the hook. Rescues become much less likely this turn.",
+        kick: "Undo generator progress (finished generators stay finished).",
+        power: "Your Killer power: strike your target with a bonus. Needs a few turns to recharge.",
+        tracker: "Find a target for sure and strike with a bonus. One use.",
+        jam: "Undo a lot of generator progress and stop all repairs this turn. One use.",
+        finisher: "A hooked Survivor is sacrificed on the spot. One use.",
         repair: "Work on the generator. Noisy: the Killer is more likely to find you.",
         hide: "Stay out of sight. Much harder to find, but no progress.",
         run: "Break line of sight. Best when the Killer is close.",
@@ -64,7 +79,21 @@
         } catch (e) { /* stats are optional */ }
     }
 
+    function lobbyTexts() {
+        const hunt = info.mode === "hunt";
+        $("lobbyKicker").textContent = hunt ? "KILLER HUNT" : "SURVIVOR ESCAPE";
+        $("lobbyTitle").textContent = hunt ? "HUNT THEM DOWN" : "ESCAPE THE TRIAL";
+        $("lobbyLead").textContent = hunt
+            ? "Four Survivors are repairing five generators. Sacrifice three of them before the last generator is done. " +
+              "Level up your Killer in the Minigame and DBDle: a stronger avatar hits more often, finds Survivors faster and slows their repairs. " +
+              "Your perks unlock as moves. To play a Survivor instead, equip one on the Wiki."
+            : "Repair three generators before the Killer catches you. Level up your avatar in the Minigame and DBDle: " +
+              "a stronger avatar repairs faster, is harder to find and unlocks its perks as moves. To play a Killer instead, equip one on the Wiki.";
+        $("startBtn").textContent = hunt ? "START THE HUNT" : "ENTER THE TRIAL";
+    }
+
     function renderLobby() {
+        lobbyTexts();
         const card = $("avatarCard");
         card.replaceChildren();
         const a = info.avatar;
@@ -103,7 +132,7 @@
             d.append(el("span", "tag", label), el("strong", null, String(value)));
             return d;
         };
-        row.append(cell("YOUR ESCAPES", total.wins + " / " + total.runs),
+        row.append(cell("YOUR WINS", total.wins + " / " + total.runs),
             cell("THIS AVATAR", mine ? mine.wins + " / " + mine.runs : "0 / 0"),
             cell("BEST STREAK", mine ? mine.best_streak : 0));
     }
@@ -144,13 +173,53 @@
     }
 
     function renderArena() {
+        const hunt = run.mode === "hunt";
+        document.querySelectorAll(".hunt-only").forEach(n => n.classList.toggle("hidden", !hunt));
+        document.querySelectorAll(".escape-only").forEach(n => n.classList.toggle("hidden", hunt));
         const k = run.killer;
         $("killerImage").src = k.image || "";
         $("killerImage").alt = k.name;
         $("killerName").textContent = k.name;
-        $("killerMeta").textContent = (k.power ? k.power + "  ·  " : "") + k.difficulty.toUpperCase();
         $("turnCount").textContent = run.turn + " / " + run.max_turns;
 
+        if (hunt) {
+            $("killerTag").textContent = "YOUR KILLER";
+            $("killerMeta").textContent = (k.power ? k.power + "  ·  " : "") + "LEVEL " + run.level + (run.prestige ? "  ·  PRESTIGE " + run.prestige : "");
+            renderHunt();
+        } else {
+            $("killerTag").textContent = "THE KILLER";
+            $("killerMeta").textContent = (k.power ? k.power + "  ·  " : "") + k.difficulty.toUpperCase();
+            renderEscape();
+        }
+        renderLogAndActions();
+    }
+
+    function renderHunt() {
+        pips($("huntGenPips"), run.generators.done, run.generators.needed);
+        $("huntGenBar").style.width = run.generators.progress_percent + "%";
+        pips($("sacPips"), run.sacrifices.done, run.sacrifices.needed);
+        $("sacLabel").textContent = run.sacrifices.done + " OF " + run.sacrifices.needed + " NEEDED";
+        $("powerName").textContent = run.power.name;
+        $("powerStatus").textContent = run.power.cooldown ? "RECHARGING (" + run.power.cooldown + ")" : "READY";
+
+        const grid = $("survivorGrid");
+        grid.replaceChildren();
+        run.survivors.forEach(s => {
+            const card = el("div", "survivor " + s.status + (s.targeted ? " targeted" : ""));
+            const img = el("img");
+            img.alt = s.name; img.src = s.image || "";
+            const info = el("div");
+            info.append(el("strong", null, s.name));
+            let label = STATUS_LABEL[s.status];
+            if (s.status === "hooked") label += " · " + s.timer + (s.timer === 1 ? " TURN LEFT" : " TURNS LEFT");
+            info.append(el("small", null, label));
+            if (s.targeted) info.append(el("span", "chip", "CHASING"));
+            card.append(img, info);
+            grid.append(card);
+        });
+    }
+
+    function renderEscape() {
         pips($("genPips"), run.generators.done, run.generators.needed);
         $("genBar").style.width = run.generators.progress_percent + "%";
         pips($("hpPips"), run.hp, run.max_hp);
@@ -165,7 +234,9 @@
         for (let i = 0; i < 4; i++) hb.append(el("span", "hb" + (i <= run.heartbeat ? " on l" + run.heartbeat : "")));
         hb.dataset.level = String(run.heartbeat);
         $("heartbeatLabel").textContent = HEARTBEAT[run.heartbeat];
+    }
 
+    function renderLogAndActions() {
         const log = $("log");
         log.replaceChildren();
         run.log.forEach((line, i) => log.append(el("li", i === run.log.length - 1 ? "latest" : "", line)));
@@ -178,7 +249,7 @@
             b.type = "button";
             b.disabled = !a.enabled || busy;
             b.append(el("strong", null, a.label.toUpperCase()));
-            b.append(el("small", null, a.enabled ? (isPerk ? "PERK · ONCE" : "") : (a.reason || "")));
+            b.append(el("small", null, a.enabled ? (isPerk ? "PERK · ONCE" : a.kind === "power" ? "POWER" : "") : (a.reason || "")));
             b.title = HELP[a.kind || a.id] || "";
             b.addEventListener("click", () => act(a.id));
             actions.append(b);
@@ -218,14 +289,17 @@
     // ---------------- result ----------------
     function showResult() {
         const won = run.status === "won";
-        const why = {
+        const hunt = run.mode === "hunt";
+        const why = (hunt ? HUNT_TEXT : {
             escaped: ["ESCAPED", "The gates are powered. You slip into the fog and live to repair another day."],
             caught: ["CAUGHT", "The Killer ran you down. The Entity claims you."],
             out_of_time: ["LOST IN THE FOG", "You took too long. The Entity grew bored and claimed you."]
-        }[run.outcome] || ["OVER", ""];
-        $("resultKicker").textContent = won ? "YOU SURVIVED" : "YOU DIED";
+        })[run.outcome] || ["OVER", ""];
+        $("resultKicker").textContent = hunt ? (won ? "THE HUNT IS YOURS" : "THE HUNT FAILED") : (won ? "YOU SURVIVED" : "YOU DIED");
         $("resultTitle").textContent = why[0];
-        $("resultText").textContent = why[1] + " (" + run.turn + " turns against " + run.killer.name + ")";
+        $("resultText").textContent = why[1] + (hunt
+            ? " (" + run.turn + " turns, " + run.sacrifices.done + " sacrifices)"
+            : " (" + run.turn + " turns against " + run.killer.name + ")");
         const log = $("resultLog");
         log.replaceChildren();
         run.log.forEach(line => log.append(el("li", null, line)));

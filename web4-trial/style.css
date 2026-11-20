@@ -394,3 +394,19 @@ button {
     .gauges { grid-template-columns: 1fr; }
     .actions { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* ---------- Hunt (Killer avatar) ---------- */
+.power-name { display: block; font-family: "Anton", Impact, sans-serif; font-weight: 400; font-size: 22px; letter-spacing: .02em; }
+.survivor-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 12px; }
+.survivor { display: flex; align-items: center; gap: 12px; padding: 10px; background: #0c0c0c; border: 1px solid #242424; }
+.survivor img { width: 44px; height: 56px; object-fit: cover; object-position: top center; border: 1px solid #2c2c2c; background: #111; }
+.survivor strong { display: block; font-size: 13px; font-weight: 900; letter-spacing: .03em; }
+.survivor small { display: block; margin-top: 3px; color: #9b9da2; font-size: 10px; font-weight: 900; letter-spacing: .08em; }
+.survivor .chip { display: inline-block; margin-top: 6px; }
+.survivor.injured small { color: #d9a406; }
+.survivor.hooked { border-color: #c60000; }
+.survivor.hooked small { color: #ff4b4b; }
+.survivor.dead { opacity: .45; }
+.survivor.dead img { filter: grayscale(1); }
+.survivor.targeted { border-color: #d9a406; box-shadow: 0 0 0 1px #d9a406 inset; }
+@media (max-width: 900px) { .survivor-grid { grid-template-columns: repeat(2, 1fr); } }
