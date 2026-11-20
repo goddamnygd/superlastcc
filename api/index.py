@@ -2,9 +2,10 @@ import logging
 import os
 import re
 import secrets
-from fractions import Fraction
+import sys
 from datetime import datetime, timedelta, timezone
 from typing import Literal, Optional
+from uuid import UUID
 
 import bcrypt
 import jwt
@@ -16,6 +17,12 @@ from fastapi.responses import JSONResponse
 from postgrest.exceptions import APIError
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from supabase import Client, create_client
+
+# Helper modules live next to this file. The sys.path line makes the import work no matter
+# how the platform starts the app. (Files starting with "_" are not served as endpoints.)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _games  # noqa: E402
+import _trial  # noqa: E402
 
 # ============================================================
 # CONFIGURATION
@@ -178,6 +185,10 @@ class LastAdmin(Exception):
     """Raised by the database trigger when the last active admin would be removed."""
 
 
+class TrialActive(Exception):
+    """Raised by the database when someone tries to swap avatars during a trial."""
+
+
 class NotConfigured(Exception):
     """Raised when a required secret (like JWT_SECRET) is missing."""
 
@@ -209,9 +220,11 @@ def run(query, duplicate="A character with that character_code already exists.")
             raise ForeignKeyMissing()
         if code == "P0001" and "last_admin" in str(getattr(e, "message", "")):
             raise LastAdmin()
+        if code == "P0001" and "trial_active" in str(getattr(e, "message", "")):
+            raise TrialActive()
         logger.error("Database query failed: %s", e)
         raise DatabaseUnavailable()
-    except (DatabaseUnavailable, DuplicateRecord, ForeignKeyMissing, LastAdmin):
+    except (DatabaseUnavailable, DuplicateRecord, ForeignKeyMissing, LastAdmin, TrialActive):
         raise
     except Exception:
         logger.exception("Unexpected database error.")
@@ -336,6 +349,14 @@ async def last_admin_handler(request: Request, exc: LastAdmin):
     )
 
 
+@app.exception_handler(TrialActive)
+async def trial_active_handler(request: Request, exc: TrialActive):
+    return JSONResponse(
+        status_code=409,
+        content={"detail": "You are in the middle of a trial. Finish it or abandon it before changing your avatar."},
+    )
+
+
 @app.exception_handler(NotConfigured)
 async def not_configured_handler(request: Request, exc: NotConfigured):
     return JSONResponse(status_code=503, content={"detail": "The server is not fully configured."})
@@ -395,7 +416,9 @@ def home():
             "/api/v1/auth/register",
             "/api/v1/auth/login",
             "/api/v1/me",
-            "/api/v1/me/avatar"
+            "/api/v1/me/avatar",
+            "/api/v1/games/round",
+            "/api/v1/trial/current"
         ]
     }
 
@@ -559,10 +582,24 @@ class EquipBody(BaseModel):
     character_id: int = Field(ge=1)
 
 
-class WinBody(BaseModel):
+class RoundStartBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     game: Literal["minigame", "dbdle"]
+    mode: str = Field(min_length=1, max_length=20)
+
+
+class TrialActionBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: str = Field(min_length=1, max_length=20)
+    turn: int = Field(ge=0, le=1000)      # the turn the player was looking at; stops double clicks and replays
+
+
+class RoundGuessBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    character_id: int = Field(ge=1)
 
 
 class AdminUserUpdate(BaseModel):
@@ -900,15 +937,17 @@ def equip_avatar(body: EquipBody, user: dict = Depends(get_current_user)):
 
 @app.delete("/api/v1/me/avatar")
 def unequip_avatar(user: dict = Depends(get_current_user)):
+    if db_active_trial(user["id"]) is not None:
+        raise TrialActive()
     run(get_client().table("equipped_avatar").delete().eq("user_id", user["id"]))
     return {"message": "Avatar removed.", "avatar": None}
 
 
-@app.post("/api/v1/me/avatar/win")
-def report_win(body: WinBody, user: dict = Depends(get_current_user)):
-    """Called by the games when the player wins. The server alone decides the XP:
+def award_win(user: dict) -> dict:
+    """Gives the equipped avatar its XP for a win. The server alone decides the XP:
     base XP (complete + win + objective + performance) plus the equipped character's permanent Prestige bonus.
-    leveled_up is true when that XP pushed the avatar to a new level (it can be several at once)."""
+    leveled_up is true when that XP pushed the avatar to a new level (it can be several at once).
+    Only called by the game endpoints below, after the SERVER has seen the correct guess."""
     result = db_rpc("add_avatar_xp", {
         "p_user_id": user["id"], "p_base_xp": BASE_GAME_XP, "p_cooldown_seconds": WIN_COOLDOWN_SECONDS,
         "p_level_base": LEVEL_BASE_XP, "p_level_step": LEVEL_STEP_XP, "p_max_level": MAX_LEVEL,
@@ -950,6 +989,203 @@ def prestige(user: dict = Depends(get_current_user)):
         "reached_max_prestige": new_prestige >= MAX_PRESTIGE,
         "avatar": db_get_avatar(user["id"]),
     }
+
+
+# ============================================================
+# GAME ROUNDS (login required): the server picks the answer and checks every guess.
+# The browser never sees the hidden character until the round is over, and XP is only given
+# when the server itself sees the correct guess (the old "I won" endpoint no longer exists).
+# Guests (not logged in) still play a local round in the browser: nothing is at stake for them.
+# ============================================================
+GAME_MODES = {"minigame": _games.MINIGAME_MODES, "dbdle": _games.DBDLE_MODES}
+
+
+def db_all_characters() -> list:
+    return run(get_client().table(TABLE).select("*").order("id").range(0, 999)).data
+
+
+def db_last_answer(user_id: int, game: str) -> Optional[int]:
+    rows = run(
+        get_client().table("game_rounds").select("answer_id")
+        .eq("user_id", user_id).eq("game", game)
+        .order("created_at", desc=True).limit(1)
+    ).data
+    return rows[0]["answer_id"] if rows else None
+
+
+@app.post("/api/v1/games/round", status_code=201)
+def start_round(body: RoundStartBody, user: dict = Depends(get_current_user)):
+    if body.mode not in GAME_MODES[body.game]:
+        raise HTTPException(status_code=422, detail="mode must be one of: " + ", ".join(GAME_MODES[body.game]))
+    answer = _games.pick_answer(db_all_characters(), body.game, body.mode, db_last_answer(user["id"], body.game))
+    if answer is None:
+        raise HTTPException(status_code=404, detail="No character is available for that mode.")
+    max_attempts = _games.MINIGAME_LIVES if body.game == "minigame" else None
+    round_id = db_rpc("game_start", {
+        "p_user_id": user["id"], "p_game": body.game, "p_mode": body.mode,
+        "p_answer_id": answer["id"], "p_max_attempts": max_attempts,
+    })
+    return {
+        "round_id": round_id, "game": body.game, "mode": body.mode, "max_attempts": max_attempts,
+        "clue": _games.clue_for(body.mode, answer) if body.game == "minigame" else {},
+    }
+
+
+@app.post("/api/v1/games/round/{round_id}/guess")
+def guess_in_round(round_id: UUID, body: RoundGuessBody, user: dict = Depends(get_current_user)):
+    result = db_rpc("game_guess", {
+        "p_user_id": user["id"], "p_round_id": str(round_id),
+        "p_character_id": body.character_id, "p_unique": True,
+    }) or {}
+    status = result.get("status")
+    errors = {
+        "not_found": (404, "Round not found."),
+        "finished": (409, "This round is already over."),
+        "unknown_character": (404, "Character not found."),
+        "invalid_for_mode": (422, "That character is not allowed in this mode."),
+        "duplicate": (409, "You already guessed that character."),
+    }
+    if status != "ok":
+        code, message = errors.get(status, (500, "Could not record the guess."))
+        raise HTTPException(status_code=code, detail=message)
+
+    finished = result["round_status"] != "active"
+    won = result["round_status"] == "won"
+    out = {
+        "correct": result["correct"], "attempts": result["attempts"], "max_attempts": result["max_attempts"],
+        "finished": finished, "won": won, "answer": None, "comparison": None, "xp": None,
+    }
+    if result["max_attempts"] is not None:
+        out["lives_left"] = max(result["max_attempts"] - result["attempts"], 0)
+    if finished:
+        out["answer"] = db_get(result["answer_id"])
+    if result["max_attempts"] is None:      # DBDle: send the clues, never the answer itself
+        guessed = db_get(body.character_id)
+        answer = out["answer"] or db_get(result["answer_id"])
+        out["comparison"] = _games.compare(guessed, answer)
+    if won:
+        out["xp"] = award_win(user)
+    return out
+
+
+@app.post("/api/v1/games/round/{round_id}/giveup")
+def give_up_round(round_id: UUID, user: dict = Depends(get_current_user)):
+    result = db_rpc("game_giveup", {"p_user_id": user["id"], "p_round_id": str(round_id)}) or {}
+    if result.get("status") != "ok":
+        raise HTTPException(status_code=404, detail="Round not found.")
+    return {"answer": db_get(result["answer_id"])}
+
+
+@app.get("/api/v1/games/round/{round_id}/answer")
+def admin_round_answer(round_id: UUID, admin: dict = Depends(require_admin)):
+    """Admin answer key for the on-screen overlay. Only for the admin's own rounds, only while they are active."""
+    rows = run(
+        get_client().table("game_rounds").select("answer_id, status")
+        .eq("id", str(round_id)).eq("user_id", admin["id"]).limit(1)
+    ).data
+    if not rows or rows[0]["status"] != "active":
+        return {"name": ""}
+    character = db_get(rows[0]["answer_id"])
+    return {"name": character["name"] if character else ""}
+
+
+# ============================================================
+# THE TRIAL (login required): Survivor Escape. Turn-based, played entirely by the server.
+# The browser sends the action it chose and the turn it was looking at; the server rolls the dice,
+# saves the result and sends back only what the player may see (see _trial.public_view).
+# The Trial gives no XP: levels come from the training games, the Trial is where they pay off.
+# Killer avatars (Hunt mode) are not available yet.
+# ============================================================
+def db_active_trial(user_id: int):
+    rows = run(
+        get_client().table("trial_runs").select("id, state, turn, character_id, mode")
+        .eq("user_id", user_id).eq("status", "active").limit(1)
+    ).data
+    return rows[0] if rows else None
+
+
+def trial_payload(run_id: str, state: dict) -> dict:
+    return {"id": run_id, **_trial.public_view(state)}
+
+
+@app.get("/api/v1/trial/current")
+def trial_current(user: dict = Depends(get_current_user)):
+    """The active run if there is one, plus whether the equipped avatar can play and why not."""
+    active = db_active_trial(user["id"])
+    avatar = db_get_avatar(user["id"])
+    can_play, reason = True, None
+    if avatar is None:
+        can_play, reason = False, "Equip a Survivor on the Wiki to enter a trial."
+    elif avatar["character"]["role"] != "Survivor":
+        can_play, reason = False, "Hunt mode for Killer avatars is coming soon. Equip a Survivor to play Escape."
+    return {
+        "run": trial_payload(active["id"], active["state"]) if active else None,
+        "can_play": can_play, "reason": reason,
+        "avatar": avatar,
+        "bonus_cap_percent": round((_trial.MAX_LEVEL_BONUS + _trial.MAX_PRESTIGE_BONUS) * 100),
+        "perk_unlock_levels": _trial.PERK_UNLOCK_LEVELS,
+    }
+
+
+@app.post("/api/v1/trial/start", status_code=201)
+def trial_start(user: dict = Depends(get_current_user)):
+    avatar = db_get_avatar(user["id"])
+    if avatar is None:
+        raise HTTPException(status_code=409, detail="Equip a Survivor on the Wiki first.")
+    if avatar["character"]["role"] != "Survivor":
+        raise HTTPException(status_code=409, detail="Hunt mode for Killer avatars is coming soon. Equip a Survivor to play Escape.")
+    survivor = db_get(avatar["character_id"])
+    killers = [c for c in db_all_characters() if c["role"] == "Killer"]
+    if survivor is None or not killers:
+        raise HTTPException(status_code=404, detail="No opponent is available.")
+
+    # SystemRandom: the Killer and the seed cannot be predicted
+    killer = secrets.SystemRandom().choice(killers)
+    state = _trial.new_run(killer, survivor, avatar["level"], avatar.get("prestige", 0),
+                           secrets.token_hex(16), MAX_LEVEL)
+    result = db_rpc("trial_start", {
+        "p_user_id": user["id"], "p_character_id": survivor["id"], "p_mode": "escape", "p_state": state,
+    }) or {}
+    if result.get("status") != "ok":
+        raise HTTPException(status_code=409, detail="Equip a Survivor on the Wiki first.")
+    return {"run": trial_payload(result["run_id"], state)}
+
+
+@app.post("/api/v1/trial/action")
+def trial_action(body: TrialActionBody, user: dict = Depends(get_current_user)):
+    active = db_active_trial(user["id"])
+    if active is None:
+        raise HTTPException(status_code=404, detail="You have no active trial.")
+    state = active["state"]
+    if body.turn != state["turn"]:
+        raise HTTPException(status_code=409, detail="Your screen is out of date. Reload the trial.")
+    try:
+        _trial.step(state, body.action)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))     # the turn is NOT used up
+    result = db_rpc("trial_apply", {
+        "p_user_id": user["id"], "p_run_id": active["id"], "p_expected_turn": body.turn,
+        "p_state": state, "p_status": state["status"],
+    }) or {}
+    if result.get("status") != "ok":
+        raise HTTPException(status_code=409, detail="That turn was already played. Reload the trial.")
+    return {"run": trial_payload(active["id"], state)}
+
+
+@app.post("/api/v1/trial/abandon")
+def trial_abandon(user: dict = Depends(get_current_user)):
+    ended = db_rpc("trial_abandon", {"p_user_id": user["id"]})
+    return {"abandoned": bool(ended)}
+
+
+@app.get("/api/v1/trial/stats")
+def trial_stats(user: dict = Depends(get_current_user)):
+    rows = run(
+        get_client().table("trial_stats")
+        .select("mode, runs, wins, losses, win_streak, best_streak, character:characters(id, name, role)")
+        .eq("user_id", user["id"]).order("wins", desc=True)
+    ).data
+    return {"stats": rows}
 
 
 # ============================================================

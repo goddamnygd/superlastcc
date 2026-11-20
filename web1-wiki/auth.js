@@ -15,6 +15,9 @@
     let token = readToken();
     let user = null;
     let avatar = null;
+    // Resolves once the first /me check has finished, so a page knows whether the visitor is really logged in
+    let markReady;
+    const ready = new Promise(resolve => { markReady = resolve; });
 
     // A guest is simply a visitor with no login token (gate.js only lets them in if they chose guest mode).
     // Guests get no avatar and no leveling, and can play each game mode once.
@@ -319,23 +322,19 @@
         }
     }
 
-    async function reportWin(game) {
-        if (isGuest()) return;   // guests do not level anything
-        if (!token || !user) { toast("Log in and equip an avatar to level up when you win."); return; }
-        try {
-            const r = await api("/me/avatar/win", { method: "POST", body: { game } });
-            if (r.avatar) { avatar = r.avatar; paintButton(); }
-            if (r.reached_max_level) {
-                toast("LEVEL " + avatar.max_level + " REACHED! Open your account to Prestige.", "levelup");
-            } else if (r.leveled_up) {
-                toast("LEVEL UP! " + avatar.character.name + " is now level " + avatar.level + " (+" + fmt(r.xp_gained) + " XP)", "levelup");
-            } else if (r.xp_gained) {
-                toast("+" + fmt(r.xp_gained) + " XP");
-            } else if (r.reason === "no_avatar") {
-                toast("You won! Equip an avatar on the Wiki to start leveling up.");
-            }
-        } catch (e) {
-            if (e.status === 401) { saveToken(null); user = null; goLogin("expired"); }
+    // Shows the result of a round the SERVER already judged (r = the "xp" object from a game endpoint).
+    // The browser cannot report a win any more: the server only gives XP when it sees the correct guess itself.
+    function showWin(r) {
+        if (!r) return;
+        if (r.avatar) { avatar = r.avatar; paintButton(); }
+        if (r.reached_max_level) {
+            toast("LEVEL " + avatar.max_level + " REACHED! Open your account to Prestige.", "levelup");
+        } else if (r.leveled_up) {
+            toast("LEVEL UP! " + avatar.character.name + " is now level " + avatar.level + " (+" + fmt(r.xp_gained) + " XP)", "levelup");
+        } else if (r.xp_gained) {
+            toast("+" + fmt(r.xp_gained) + " XP");
+        } else if (r.reason === "no_avatar") {
+            toast("You won! Equip an avatar on the Wiki to start leveling up.");
         }
     }
 
@@ -409,7 +408,8 @@
         return true;
     }
 
-    window.DBDAuth = { equip, equipButton, progressBox, reportWin, open, guestAllow, isGuest, isLoggedIn: () => !!user };
+    window.DBDAuth = { equip, equipButton, progressBox, showWin, api, ready, open, guestAllow, isGuest,
+                       isLoggedIn: () => !!user, isAdmin: () => !!(user && user.role === "admin") };
 
     // ---------- admin answer key ----------
     // Admin accounts only (role comes from the server's /me). A game exposes its current answer through
@@ -440,6 +440,7 @@
         }
         mountButton(); paintButton();
         refresh().then(() => {
+            markReady();
             // sent here by a game because no avatar is equipped yet
             if (new URLSearchParams(location.search).get("avatar") === "required" && !avatar) {
                 toast("Pick an avatar first: open a character and press EQUIP AS AVATAR.", "levelup");

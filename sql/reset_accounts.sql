@@ -2,6 +2,9 @@
 -- The characters table and its rows are NOT touched.
 -- Run in the Supabase SQL Editor.
 
+drop table if exists public.trial_stats;
+drop table if exists public.trial_runs;
+drop table if exists public.game_rounds;
 drop table if exists public.audit_log;
 drop table if exists public.prestige_history;
 drop table if exists public.avatar_progress;
@@ -22,6 +25,12 @@ drop function if exists public.avatar_level_for_xp(integer, integer, integer, in
 drop function if exists public.add_avatar_xp(bigint, integer, integer, integer, integer, integer, integer);
 drop function if exists public.prestige_avatar(bigint, integer, integer);
 drop function if exists public.protect_last_admin();
+drop function if exists public.game_start(bigint, text, text, bigint, integer);
+drop function if exists public.game_guess(bigint, uuid, bigint, boolean);
+drop function if exists public.game_giveup(bigint, uuid);
+drop function if exists public.trial_start(bigint, bigint, text, jsonb);
+drop function if exists public.trial_apply(bigint, uuid, integer, jsonb, text);
+drop function if exists public.trial_abandon(bigint);
 -- set_updated_at() is shared with the characters table, so it is NOT dropped.
 
 -- Check: should return only 'characters'

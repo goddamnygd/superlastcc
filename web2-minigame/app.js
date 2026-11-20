@@ -41,6 +41,9 @@ let currentMode = "description";
 let lives = 3;
 let answered = false;
 let lastCharacterId = null;
+let round = null;          // set for logged-in players: the SERVER holds the answer and checks every guess
+let adminAnswer = "";      // only filled for admin accounts (the answer-key overlay)
+let busy = false;
 
 // API
 async function loadCharacters() {
@@ -101,7 +104,11 @@ document.querySelectorAll(".mode-card").forEach(card => {
     });
 });
 
-function startGame() {
+async function startGame() {
+    if (busy) {
+        return;
+    }
+
     if (characters.length === 0) {
         alert("Characters are still loading from the API.");
         return;
@@ -112,18 +119,53 @@ function startGame() {
         return;
     }
 
+    // Wait until we know whether the visitor is logged in
+    if (window.DBDAuth) {
+        await DBDAuth.ready;
+    }
+
     lives = 3;
     answered = false;
+    round = null;
+    adminAnswer = "";
     gameMessage.textContent = "";
     gameMessage.className = "game-message";
     bloodLayer.innerHTML = "";
     updateLives();
 
-    currentCharacter = chooseRandomCharacter();
-    lastCharacterId = currentCharacter.id;
+    let clue;
+
+    if (window.DBDAuth && DBDAuth.isLoggedIn()) {
+        // Logged in: the server picks the character and only sends the clue
+        busy = true;
+        try {
+            round = await DBDAuth.api("/games/round", {
+                method: "POST",
+                body: { game: "minigame", mode: currentMode }
+            });
+        } catch (error) {
+            busy = false;
+            alert(error.message || "Could not start a round.");
+            return;
+        }
+        busy = false;
+        currentCharacter = null;
+        clue = round.clue;
+
+        if (DBDAuth.isAdmin()) {
+            DBDAuth.api("/games/round/" + round.round_id + "/answer")
+                .then(result => { adminAnswer = result.name || ""; })
+                .catch(() => {});
+        }
+    } else {
+        // Guest: nothing is at stake, so the round stays in the browser
+        currentCharacter = chooseRandomCharacter();
+        lastCharacterId = currentCharacter.id;
+        clue = localClue(currentCharacter);
+    }
 
     prepareBackgroundCharacters();
-    buildClue();
+    buildClue(clue);
 
     guessInput.value = "";
     gameScreen.classList.remove("hidden");
@@ -148,9 +190,15 @@ function chooseRandomCharacter() {
     return pool[Math.floor(Math.random() * pool.length)];
 }
 
+function localClue(character) {
+    if (currentMode === "description") return { description: character.description };
+    if (currentMode === "perks") return { perks: [character.perk_1, character.perk_2, character.perk_3] };
+    return { image: character.image };
+}
+
 function prepareBackgroundCharacters() {
     const others = characters.filter(
-        character => character.id !== currentCharacter.id && character.image
+        character => (!currentCharacter || character.id !== currentCharacter.id) && character.image
     );
 
     const left = others[Math.floor(Math.random() * others.length)];
@@ -162,57 +210,112 @@ function prepareBackgroundCharacters() {
 }
 
 // CLUE MODES
-function buildClue() {
+function buildClue(clue) {
     descriptionClue.classList.add("hidden");
     perksClue.classList.add("hidden");
     imageClue.classList.add("hidden");
 
     if (currentMode === "description") {
         modeLabel.textContent = "DESCRIPTION";
-        descriptionClue.textContent = currentCharacter.description;
+        descriptionClue.textContent = clue.description;
         descriptionClue.classList.remove("hidden");
     }
 
     if (currentMode === "perks") {
         modeLabel.textContent = "PERKS";
-        document.getElementById("perk1").textContent = currentCharacter.perk_1;
-        document.getElementById("perk2").textContent = currentCharacter.perk_2;
-        document.getElementById("perk3").textContent = currentCharacter.perk_3;
+        document.getElementById("perk1").textContent = clue.perks[0];
+        document.getElementById("perk2").textContent = clue.perks[1];
+        document.getElementById("perk3").textContent = clue.perks[2];
         perksClue.classList.remove("hidden");
     }
 
     if (currentMode === "image") {
         modeLabel.textContent = "ZOOMED IMAGE";
-        zoomImage.src = currentCharacter.image;
+        zoomImage.src = clue.image;
         zoomImage.style.transform = "scale(5.2)";
         imageClue.classList.remove("hidden");
     }
 }
 
 // GUESSING
-guessForm.addEventListener("submit", event => {
+guessForm.addEventListener("submit", async event => {
     event.preventDefault();
 
-    if (answered) {
+    if (answered || busy) {
         return;
     }
 
     const guess = normalize(guessInput.value);
-    const answer = normalize(currentCharacter.name);
 
     if (!guess) {
         return;
     }
 
-    if (guess === answer) {
+    if (round) {
+        await guessOnServer(guess);
+        return;
+    }
+
+    // Guest round (local)
+    if (guess === normalize(currentCharacter.name)) {
         answered = true;
         gameMessage.textContent = "CORRECT. THE ENTITY RELEASES YOU.";
         revealCharacter(true);
-        if (window.DBDAuth) DBDAuth.reportWin("minigame");   // levels up the equipped avatar
         return;
     }
 
     lives--;
+    showWrongGuess();
+
+    if (lives <= 0) {
+        answered = true;
+        setTimeout(() => revealCharacter(false), 700);
+    }
+});
+
+async function guessOnServer(guess) {
+    const picked = characters.find(character => normalize(character.name) === guess);
+
+    if (!picked) {
+        gameMessage.textContent = "CHOOSE A CHARACTER FROM THE LIST.";
+        gameMessage.className = "game-message wrong";
+        return;
+    }
+
+    busy = true;
+
+    try {
+        const result = await DBDAuth.api("/games/round/" + round.round_id + "/guess", {
+            method: "POST",
+            body: { character_id: picked.id }
+        });
+
+        if (result.correct) {
+            answered = true;
+            currentCharacter = result.answer;
+            gameMessage.textContent = "CORRECT. THE ENTITY RELEASES YOU.";
+            revealCharacter(true);
+            DBDAuth.showWin(result.xp);
+            return;
+        }
+
+        lives = result.lives_left;
+        showWrongGuess();
+
+        if (result.finished) {
+            answered = true;
+            currentCharacter = result.answer;
+            setTimeout(() => revealCharacter(false), 700);
+        }
+    } catch (error) {
+        gameMessage.textContent = (error.message || "Something went wrong.").toUpperCase();
+        gameMessage.className = "game-message wrong";
+    } finally {
+        busy = false;
+    }
+}
+
+function showWrongGuess() {
     updateLives();
     createBloodSplatter();
 
@@ -227,12 +330,7 @@ guessForm.addEventListener("submit", event => {
     if (currentMode === "image" && lives > 0) {
         zoomOutImage();
     }
-
-    if (lives <= 0) {
-        answered = true;
-        setTimeout(() => revealCharacter(false), 700);
-    }
-});
+}
 
 function normalize(value) {
     return value
@@ -343,4 +441,10 @@ loadCharacters();
 
 
 // Admin answer key (shown only to admin accounts by auth.js)
-window.DBDCheat = { getAnswer: () => (currentCharacter && !answered ? currentCharacter.name : "") };
+window.DBDCheat = {
+    getAnswer: () => {
+        if (answered) return "";
+        if (round) return adminAnswer;
+        return currentCharacter ? currentCharacter.name : "";
+    }
+};

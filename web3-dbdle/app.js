@@ -1,4 +1,4 @@
-const API_BASE_URL = "https://cloudcompfinale.vercel.app/api/v1";
+const API_BASE_URL = "https://superlastcc.vercel.app/api/v1";   // same API as login (auth.js)
 
 const API_KEY = "student-api-key-123";
 
@@ -31,6 +31,9 @@ let answer = null;
 let attempts = 0;
 let finished = false;
 let guessedIds = new Set();
+let round = null;          // set for logged-in players: the SERVER holds the answer and compares every guess
+let adminAnswer = "";      // only filled for admin accounts (the answer-key overlay)
+let busy = false;
 
 const difficultyOrder = {
     "Easy": 1,
@@ -74,7 +77,7 @@ async function loadCharacters() {
             return;
         }
 
-        startRound();
+        await startRound();
     }
 
     catch (error) {
@@ -132,14 +135,47 @@ function fillCharacterNames() {
     });
 }
 
-function startRound() {
-    answer =
-        activeCharacters[
-            Math.floor(
-                Math.random() *
-                activeCharacters.length
-            )
-        ];
+async function startRound() {
+    if (window.DBDAuth) {
+        await DBDAuth.ready;
+    }
+
+    round = null;
+    answer = null;
+    adminAnswer = "";
+
+    if (window.DBDAuth && DBDAuth.isLoggedIn()) {
+        // Logged in: the server picks the hidden character. We never receive it until the round is over.
+        busy = true;
+
+        try {
+            round = await DBDAuth.api("/games/round", {
+                method: "POST",
+                body: { game: "dbdle", mode: selectedMode }
+            });
+        } catch (error) {
+            busy = false;
+            flashInvalid((error.message || "COULD NOT START A ROUND").toUpperCase());
+            return;
+        }
+
+        busy = false;
+
+        if (DBDAuth.isAdmin()) {
+            DBDAuth.api("/games/round/" + round.round_id + "/answer")
+                .then(result => { adminAnswer = result.name || ""; })
+                .catch(() => {});
+        }
+    } else {
+        // Guest: nothing is at stake, so the round stays in the browser
+        answer =
+            activeCharacters[
+                Math.floor(
+                    Math.random() *
+                    activeCharacters.length
+                )
+            ];
+    }
 
     attempts = 0;
     finished = false;
@@ -162,10 +198,10 @@ function startRound() {
 guessForm.addEventListener(
     "submit",
 
-    event => {
+    async event => {
         event.preventDefault();
 
-        if (finished) {
+        if (finished || busy) {
             return;
         }
 
@@ -198,13 +234,20 @@ guessForm.addEventListener(
             return;
         }
 
+        if (round) {
+            await guessOnServer(guessedCharacter);
+            return;
+        }
+
+        // Guest round (local)
         guessedIds.add(
             guessedCharacter.id
         );
         attempts++;
         attemptCount.textContent = attempts;
         addGuessRow(
-            guessedCharacter
+            guessedCharacter,
+            localCompare(guessedCharacter, answer)
         );
 
         guessInput.value = "";
@@ -218,78 +261,76 @@ guessForm.addEventListener(
     }
 );
 
-function addGuessRow(character) {
+async function guessOnServer(guessedCharacter) {
+    busy = true;
+
+    try {
+        const result = await DBDAuth.api("/games/round/" + round.round_id + "/guess", {
+            method: "POST",
+            body: { character_id: guessedCharacter.id }
+        });
+
+        guessedIds.add(guessedCharacter.id);
+        attempts = result.attempts;
+        attemptCount.textContent = attempts;
+        addGuessRow(guessedCharacter, result.comparison);
+        guessInput.value = "";
+
+        if (result.finished) {
+            answer = result.answer;
+            finishRound(result.won, result.xp);
+        }
+    } catch (error) {
+        flashInvalid((error.message || "SOMETHING WENT WRONG").toUpperCase());
+    } finally {
+        busy = false;
+    }
+}
+
+// Clue states for one guess. Guests use localCompare (below); logged-in players get the same
+// shape from the server, so the answer never has to be in the browser.
+//   text clues:  correct / partial / wrong
+//   year, difficulty: correct / higher (the answer is higher) / lower / wrong
+function localCompare(guess, target) {
+    return {
+        role: compareText(guess.role, target.role),
+        gender: compareText(guess.gender, target.gender),
+        origin: compareMultiValue(guess.origin, target.origin),
+        realm: compareText(guess.realm, target.realm),
+        dlc: compareDlc(guess.dlc, target.dlc),
+        year: compareOrdered(guess.year, target.year),
+        difficulty: compareOrdered(
+            difficultyOrder[guess.difficulty] || 0,
+            difficultyOrder[target.difficulty] || 0
+        )
+    };
+}
+
+function compareOrdered(guessValue, targetValue) {
+    if (guessValue === targetValue) {
+        return "correct";
+    }
+
+    if (!guessValue || !targetValue) {
+        return "wrong";
+    }
+
+    return guessValue < targetValue ? "higher" : "lower";
+}
+
+function addGuessRow(character, cmp) {
     const row = document.createElement("div");
 
     row.className = "guess-row";
 
-    row.appendChild(
-        makeCharacterCell(character)
-    );
-
-    row.appendChild(
-        makeTextCell(
-            character.role,
-            compareText(
-                character.role,
-                answer.role
-            )
-        )
-    );
-
-    row.appendChild(
-        makeTextCell(
-            character.gender,
-            compareText(
-                character.gender,
-                answer.gender
-            )
-        )
-    );
-
-    row.appendChild(
-        makeTextCell(
-            character.origin,
-            compareMultiValue(
-                character.origin,
-                answer.origin
-            )
-        )
-    );
-
-    row.appendChild(
-        makeTextCell(
-            character.realm,
-            compareText(
-                character.realm,
-                answer.realm
-            )
-        )
-    );
-
-    row.appendChild(
-        makeTextCell(
-            character.dlc,
-            compareDlc(
-                character.dlc,
-                answer.dlc
-            )
-        )
-    );
-
-    row.appendChild(
-        makeNumberCell(
-            character.year,
-            answer.year
-        )
-    );
-
-    row.appendChild(
-        makeDifficultyCell(
-            character.difficulty,
-            answer.difficulty
-        )
-    );
+    row.appendChild(makeCharacterCell(character));
+    row.appendChild(makeTextCell(character.role, cmp.role));
+    row.appendChild(makeTextCell(character.gender, cmp.gender));
+    row.appendChild(makeTextCell(character.origin, cmp.origin));
+    row.appendChild(makeTextCell(character.realm, cmp.realm));
+    row.appendChild(makeTextCell(character.dlc, cmp.dlc));
+    row.appendChild(makeOrderedCell(character.year, cmp.year));
+    row.appendChild(makeOrderedCell(character.difficulty, cmp.difficulty));
 
     guessRows.prepend(
         row
@@ -319,78 +360,16 @@ function makeTextCell(
     return cell;
 }
 
-function makeNumberCell(
-    guessValue,
-    answerValue
-) {
+function makeOrderedCell(value, state) {
     const cell = document.createElement("div");
+    cell.className = state === "correct" ? "guess-cell correct" : "guess-cell wrong";
+    cell.textContent = value;
 
-    if (
-        guessValue === answerValue
-    ) {
-        cell.className = "guess-cell correct";
-        cell.textContent = guessValue;
-        return cell;
-    }
-
-    cell.className = "guess-cell wrong";
-    cell.textContent = guessValue;
-    const arrow = document.createElement("span");
-    arrow.className = "direction-arrow";
-    arrow.textContent =
-        guessValue < answerValue
-            ? "↑"
-            : "↓";
-
-    cell.appendChild(
-        arrow
-    );
-
-    return cell;
-}
-
-function makeDifficultyCell(
-    guessDifficulty,
-    answerDifficulty
-) {
-    const guessValue =
-        difficultyOrder[
-            guessDifficulty
-        ] || 0;
-
-    const answerValue =
-        difficultyOrder[
-            answerDifficulty
-        ] || 0;
-
-    const cell = document.createElement("div");
-
-    if (
-        guessDifficulty
-        === answerDifficulty
-    ) {
-        cell.className = "guess-cell correct";
-        cell.textContent = guessDifficulty;
-        return cell;
-    }
-
-    cell.className = "guess-cell wrong";
-    cell.textContent = guessDifficulty;
-
-    if (
-        guessValue &&
-        answerValue
-    ) {
+    if (state === "higher" || state === "lower") {
         const arrow = document.createElement("span");
         arrow.className = "direction-arrow";
-        arrow.textContent =
-            guessValue < answerValue
-                ? "↑"
-                : "↓";
-
-        cell.appendChild(
-            arrow
-        );
+        arrow.textContent = state === "higher" ? "↑" : "↓";
+        cell.appendChild(arrow);
     }
 
     return cell;
@@ -502,19 +481,33 @@ function flashInvalid(
 giveUpBtn.addEventListener(
     "click",
 
-    () => {
-        if (finished) {
+    async () => {
+        if (finished || busy) {
             return;
+        }
+
+        if (round) {
+            busy = true;
+
+            try {
+                const result = await DBDAuth.api("/games/round/" + round.round_id + "/giveup", { method: "POST" });
+                answer = result.answer;
+            } catch (error) {
+                flashInvalid((error.message || "SOMETHING WENT WRONG").toUpperCase());
+                return;
+            } finally {
+                busy = false;
+            }
         }
 
         finishRound(false);
     }
 );
 
-function finishRound(won) {
+function finishRound(won, xp) {
     finished = true;
 
-    if (won && window.DBDAuth) DBDAuth.reportWin("dbdle");   // levels up the equipped avatar
+    if (won && xp && window.DBDAuth) DBDAuth.showWin(xp);   // the server already awarded the XP
 
     guessInput.disabled = true;
 
@@ -540,7 +533,7 @@ playAgainBtn.addEventListener(
     "click",
 
     () => {
-        if (!guestAllowed()) {
+        if (busy || !guestAllowed()) {
             return;
         }
 
@@ -586,4 +579,10 @@ loadCharacters();
 
 
 // Admin answer key (shown only to admin accounts by auth.js)
-window.DBDCheat = { getAnswer: () => (answer ? answer.name : "") };
+window.DBDCheat = {
+    getAnswer: () => {
+        if (finished) return "";
+        if (round) return adminAnswer;
+        return answer ? answer.name : "";
+    }
+};
