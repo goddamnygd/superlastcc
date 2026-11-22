@@ -25,7 +25,7 @@
         chase: "Attack the Survivor you are chasing. A healthy one gets injured, an injured one is hooked.",
         camp: "Wait beside the hook. Rescues become much less likely this turn.",
         kick: "Undo generator progress (finished generators stay finished).",
-        power: "Your Killer power: strike your target with a bonus. Needs a few turns to recharge.",
+        power: "Your Killer power. It recharges after each use.",
         tracker: "Find a target for sure and strike with a bonus. One use.",
         jam: "Undo a lot of generator progress and stop all repairs this turn. One use.",
         finisher: "A hooked Survivor is sacrificed on the spot. One use.",
@@ -200,6 +200,7 @@
         pips($("sacPips"), run.sacrifices.done, run.sacrifices.needed);
         $("sacLabel").textContent = run.sacrifices.done + " OF " + run.sacrifices.needed + " NEEDED";
         $("powerName").textContent = run.power.name;
+        $("powerName").title = run.power.help || "";
         $("powerStatus").textContent = run.power.cooldown ? "RECHARGING (" + run.power.cooldown + ")" : "READY";
 
         const grid = $("survivorGrid");
@@ -250,7 +251,7 @@
             b.disabled = !a.enabled || busy;
             b.append(el("strong", null, a.label.toUpperCase()));
             b.append(el("small", null, a.enabled ? (isPerk ? "PERK · ONCE" : a.kind === "power" ? "POWER" : "") : (a.reason || "")));
-            b.title = HELP[a.kind || a.id] || "";
+            b.title = a.help || HELP[a.kind || a.id] || "";
             b.addEventListener("click", () => act(a.id));
             actions.append(b);
         });

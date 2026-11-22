@@ -37,14 +37,22 @@ def decent(state):
 
 
 def strong(state):
-    """Like decent, and spends perk moves at the right moment."""
+    """Like decent, and spends each perk move at a sensible moment (by what the perk does)."""
     can, hb, hp = enabled(state), t.heartbeat(state), state["hp"]
-    if "perk_2" in can and hb >= 2:
-        return "perk_2"
-    if "perk_1" in can and hb >= 3 and hp <= 2:
-        return "perk_1"
-    if "perk_3" in can and hb <= 1:
-        return "perk_3"
+    for slot in ("perk_1", "perk_2", "perk_3"):
+        if slot not in can:
+            continue
+        kind = t._perk_kind_at(state, int(slot[-1]) - 1)
+        if kind == "defense" and hb >= 2:
+            return slot
+        if kind == "tempo" and hb >= 3 and hp <= 2:
+            return slot
+        if kind == "push" and hb <= 1:
+            return slot
+        if kind == "heal" and hp <= 2 and hb <= 1:
+            return slot
+        if kind == "stealth" and hb >= 1:
+            return slot
     return decent(state)
 
 
@@ -66,7 +74,32 @@ def rate(policy, difficulty, level, prestige, runs=3000):
     return wins / runs, turns / runs, outcomes
 
 
+def by_survivor(level, prestige, runs=int(os.environ.get("RUNS", "200"))):
+    """Every Survivor in the seed data, with their real perks, against Intermediate Killers."""
+    import re
+    global SURVIVOR
+    seed = open(os.path.join(os.path.dirname(__file__), "..", "sql", "seed.sql"), encoding="utf-8").read()
+    pat = re.compile(r"\s*\((\d+), '((?:[^']|'')*)', '[^']*', 'Survivor', '[^']*', '(?:[^']|'')*', '(?:[^']|'')*', '(?:[^']|'')*', \d+, "
+                     r"'((?:[^']|'')*)', '((?:[^']|'')*)', '((?:[^']|'')*)'")
+    rows = []
+    for line in seed.splitlines():
+        m = pat.match(line)
+        if m:
+            g = [x.replace("''", "'") for x in m.groups()]
+            SURVIVOR = {"id": int(g[0]), "name": g[1], "perk_1": g[2], "perk_2": g[3], "perk_3": g[4]}
+            w, _, _ = rate(strong, "Intermediate", level, prestige, runs)
+            rows.append((w, g[1]))
+    rows.sort()
+    for w, name in rows[:4] + rows[-4:]:
+        print(f"{w*100:3.0f}%  {name}")
+    ws = [w for w, _ in rows]
+    print(f"lowest {min(ws)*100:.0f}%  median {ws[len(ws)//2]*100:.0f}%  highest {max(ws)*100:.0f}%")
+
+
 if __name__ == "__main__":
+    if os.environ.get("SURVIVORS"):
+        by_survivor(*map(int, os.environ["SURVIVORS"].split(",")))
+        sys.exit()
     avatars = [(1, 0), (25, 0), (50, 0), (100, 0), (100, 25), (100, 100)]
     for name, policy in (("NAIVE (always repair)", naive), ("DECENT", decent), ("STRONG (uses perks)", strong)):
         print(f"\n=== {name}: win rate by killer difficulty  (avg turns in brackets)")

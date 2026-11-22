@@ -24,12 +24,58 @@ MAX_TURNS = 40                # the Entity gets bored: too slow = lost
 
 # Perk "moves": the Survivor's three perks unlock as the avatar levels. Each can be used once per run.
 PERK_UNLOCK_LEVELS = {"perk_1": 10, "perk_2": 40, "perk_3": 75}
-PERK_EFFECTS = {
-    "perk_1": "tempo",        # slip away: Killer loses 3 proximity and cannot hit you this turn
-    "perk_2": "defense",      # the next hit is absorbed
-    "perk_3": "push",         # a big burst of repair progress
+PERK_KINDS = {
+    "tempo":   "Slip away: the Killer loses ground and cannot hit you this turn.",
+    "defense": "Brace yourself: the next hit is absorbed.",
+    "push":    "A big burst of generator progress.",
+    "heal":    "Patch yourself up: recover 2 health, quietly.",
+    "stealth": "Vanish for 2 turns: the Killer is much less likely to find you, even while you repair.",
 }
-PERK_PUSH_PROGRESS = 60.0
+# Every Survivor perk is matched by name to one of 5 simple one-use moves (the real perks are far more complex).
+_KIND_PERKS = {
+    "tempo": ["Sprint Burst", "Dead Hard", "Quick & Quiet", "Lithe", "Head On", "Windows of Opportunity", "Balanced Landing",
+              "Urban Evasion", "Dance With Me", "Decisive Strike", "Smash Hit", "Flip-Flop", "Blood Rush", "Overcome", "Flashbang",
+              "Quick Gambit", "Cut Loose", "Light-Footed", "Poised", "Finesse", "Moment of Glory", "Blast Mine", "Chemical Trap",
+              "Boil Over", "Adrenaline", "Come and Get Me!", "Road Life", "BADA BADA BOOM"],
+    "defense": ["Iron Will", "Borrowed Time", "Unbreakable", "We're Gonna Live Forever", "No Mither", "Off the Record", "Deliverance",
+                "Soul Guard", "Buckle Up", "Mettle of Man", "Tenacity", "Left Behind", "For the People", "Bite the Bullet",
+                "Repressed Alliance", "Blood Pact", "Conviction", "Last Stand", "Teamwork: Toughen Up", "Teamwork: Throw Down",
+                "Power Struggle", "Hardened", "Sole Survivor", "Self-Preservation", "Rookie Spirit", "Overzealous",
+                "Object of Obsession", "Counterforce", "Hubris"],
+    "push": ["Technician", "Prove Thyself", "Hyperfocus", "Fast Track", "Leader", "Built to Last", "Streetwise", "Appraisal",
+             "Wake Up!", "Open-Handed", "Up the Ante", "Ace in the Hole", "Saboteur", "Stake Out", "Detective's Intuition", "Bond",
+             "Alert", "Breakdown", "Fixated", "Better Together", "Camaraderie", "Babysitter", "Solidarity", "Any Means Necessary",
+             "Breakout", "Troubleshooter", "Made for This", "Scavenger", "Inner Focus", "Residual Manifest", "Wiretap",
+             "Potential Energy", "Friendly Competition", "Teamwork: Power of Two", "Background Player", "Apocalyptic Ingenuity",
+             "Specialist", "Boon: Exponential", "Corrective Action", "Empathic Connection", "Champion of Light",
+             "Boon: Illumination", "Deadline", "Scene Partner", "Exultation", "Invocation: Weaving Spiders", "Starlight Beacon",
+             "Cosmic Link", "Change Of Plan", "ONE-TWO-THREE-FOUR!", "Eyes of Belmont", "Parental Guidance", "Plot Twist"],
+    "heal": ["Self-Care", "Botany Knowledge", "Empathy", "Boon: Circle of Healing", "Better Than New", "Resurgence", "Reassurance",
+             "Aftercare", "Reactive Healing", "Second Wind", "Autodidact", "Inner Strength", "Oasis Refresh", "Pharmacy", "Vigil",
+             "Camaraderie"],
+    "stealth": ["Calm Spirit", "Distortion", "Low Profile", "Lucky Star", "Boon: Shadow Step", "Diversion", "Deception",
+                "Red Herring", "Dramaturgy", "Mirrored Illusion", "Teamwork: Collective Stealth", "Fogwise", "Still Sight",
+                "Bardic Inspiration", "Strength in Shadows", "Wicked", "Astral Projection", "Clairvoyance", "Boon: Dark Theory",
+                "Lucky Break", "Visionary", "Desperate Measures", "Extracensory Perception", "We See You",
+                "Teamwork: Soft Spoken", "Ghost Notes"],
+}
+PERK_KIND_BY_NAME = {}
+for _kind, _names in _KIND_PERKS.items():
+    for _n in _names:
+        PERK_KIND_BY_NAME.setdefault(_n, _kind)
+_SLOT_DEFAULT = ("tempo", "defense", "push")      # perk names we do not know: the old fixed effect by slot
+
+
+def perk_kind(perk_name, slot_index: int) -> str:
+    return PERK_KIND_BY_NAME.get(perk_name or "") or _SLOT_DEFAULT[slot_index]
+
+
+def _perk_kind_at(state: dict, index: int) -> str:
+    kinds = state["survivor"].get("perk_kinds")        # runs saved before per-perk effects use the old slot effects
+    return kinds[index] if kinds else _SLOT_DEFAULT[index]
+
+
+PERK_PUSH_PROGRESS = 36.0
 
 # Killer strength comes from the character's own "difficulty" field
 AGGRESSION = {"Easy": 0.85, "Intermediate": 1.0, "Hard": 1.15, "Very Hard": 1.3}
@@ -90,9 +136,11 @@ def new_run(killer: dict, survivor: dict, level: int, prestige: int, seed: str, 
         "proximity": START_PROXIMITY,
         "hidden": False,
         "shield": False,
+        "cloak": 0,                    # "stealth" perk: turns left with the Killer much less likely to find you
         "perks_used": [],
         "survivor": {"id": survivor["id"], "name": survivor["name"],
-                     "perks": [survivor["perk_1"], survivor["perk_2"], survivor["perk_3"]]},
+                     "perks": [survivor["perk_1"], survivor["perk_2"], survivor["perk_3"]],
+                     "perk_kinds": [perk_kind(survivor[f"perk_{i + 1}"], i) for i in range(3)]},
         "killer": {
             "id": killer["id"], "name": killer["name"], "image": killer.get("image"),
             "power": killer.get("power"), "difficulty": killer.get("difficulty", "Intermediate"),
@@ -125,10 +173,13 @@ def available_actions(state: dict) -> list:
             enabled = False
         elif slot in state["perks_used"]:
             reason, enabled = "Already used this run.", False
+        elif _perk_kind_at(state, index) == "heal" and healthy:
+            reason, enabled = "Already at full health.", False
         else:
             reason, enabled = None, True
-        out.append({"id": slot, "label": name, "enabled": enabled, "reason": reason,
-                    "kind": PERK_EFFECTS[slot]})
+        kind = _perk_kind_at(state, index)
+        out.append({"id": slot, "label": name, "enabled": enabled, "reason": reason, "kind": kind,
+                    "help": PERK_KINDS[kind]})
     return out
 
 
@@ -213,10 +264,11 @@ def step(state: dict, action: str) -> dict:
         log.append("You patch yourself up.")
     else:
         state["perks_used"].append(action)
-        effect = PERK_EFFECTS[action]
-        name = state["survivor"]["perks"][int(action[-1]) - 1]
+        index = int(action[-1]) - 1
+        effect = _perk_kind_at(state, index)
+        name = state["survivor"]["perks"][index]
         if effect == "tempo":
-            state["proximity"] = max(state["proximity"] - 3, 0)
+            state["proximity"] = max(state["proximity"] - 2, 0)
             no_hit_this_turn = True
             log.append(f"{name}: you slip away from the Killer.")
         elif effect == "defense":
@@ -226,6 +278,14 @@ def step(state: dict, action: str) -> dict:
             state["gen_progress"] += PERK_PUSH_PROGRESS * (1.0 + b)
             loud = 0.10
             log.append(f"{name}: the generator surges.")
+        elif effect == "heal":
+            state["hp"] = min(state["hp"] + 2, MAX_HP)
+            loud = 0.0
+            log.append(f"{name}: you recover quickly.")
+        elif effect == "stealth":
+            state["cloak"] = 2
+            state["proximity"] = max(state["proximity"] - 1, 0)
+            log.append(f"{name}: the shadows swallow you.")
 
     # a finished generator (a big push can finish more than one)
     while state["gen_progress"] >= GEN_NEEDED and state["gens_done"] < GENS_TO_ESCAPE:
@@ -242,9 +302,13 @@ def step(state: dict, action: str) -> dict:
     # ----- 2. the Killer answers -----
     a = k["aggression"]
     awareness = clamp((AWARE_BASE + loud) * a * (1.0 - STEALTH_FROM_BONUS * b), 0.05, 0.95)
+    cloaked = state.get("cloak", 0) > 0
     if state["hidden"]:
         awareness *= 0.35
-    if state["proximity"] >= 4 and not state["hidden"]:
+    if cloaked:
+        awareness *= 0.45
+        state["cloak"] -= 1
+    if state["proximity"] >= 4 and not state["hidden"] and not cloaked:
         awareness = max(awareness, 0.85)      # already in a chase
 
     if rng.random() < awareness:
