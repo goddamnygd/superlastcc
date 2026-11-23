@@ -6,7 +6,7 @@
      are sent back to the page they wanted. The login token travels back in the URL "#fragment"
      (never sent to a server), and this file saves it and removes it from the address bar at once.
    - Tokens are only ever sent to the addresses listed here, so keep this list exact.
-   - The hub's proxy (api/v1/[...path].js) reads this same list for its CORS allow-list. */
+   - The hub's proxy (api/proxy.js) reads this same list for its CORS allow-list. */
 (function (root) {
     "use strict";
     var SITES = {
