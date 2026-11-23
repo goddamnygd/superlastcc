@@ -1,16 +1,18 @@
-/* Shared login + avatar module. The same file is used by the Wiki, Minigame and DBDle sites.
-   It builds its own button, modal and styles, so the pages only need <script src="auth.js">.
-   Every site is a different domain, so the login is remembered per site (browser storage is not shared). */
+/* Shared login + avatar module: ONE file for the Wiki, Minigame, DBDle and Trial, hosted by the hub (the Wiki).
+   It builds its own button, modal and styles, so the pages only need <script src=".../shared/auth.js">.
+   Login itself happens on the hub's login page (see config.js); this file holds the token of the site it runs on. */
 (function () {
     "use strict";
 
-    const API = "https://superlastcc.vercel.app/api/v1";
-    const TOKEN_KEY = "dbd_token";
-    const WIKI_URL = "https://superlastcc-web1-wiki.vercel.app/";
-    const GUEST_KEY = "dbd_guest";
+    const D = window.DBD;
+    const API = D.api;   // the hub's proxy: the real API address and key stay on the hub's server
+    const TOKEN_KEY = D.TOKEN_KEY;
+    const WIKI_URL = D.sites.wiki + "/";
+    const GUEST_KEY = D.GUEST_KEY;
     const GUEST_PLAYS_KEY = "dbd_guest_plays";
 
-    function goLogin(reason) { location.replace("login.html" + (reason ? "?reason=" + reason : "")); }
+    // Log out: clear this site AND the hub (otherwise the hub would sign the visitor straight back in)
+    function goLogin(reason, logout) { location.replace(D.loginUrl({ reason: reason, logout: logout })); }
 
     let token = readToken();
     let user = null;
@@ -275,10 +277,10 @@
             catch (e) { toast(e.message); }
         } }, "REMOVE AVATAR"));
         if (isAdmin) row.append(el("button", { class: "dbda-b ghost", type: "button", onclick: () => open("admin") }, "MANAGE USERS"));
-        row.append(el("button", { class: "dbda-b", type: "button", onclick: () => { saveToken(null); user = null; avatar = null; paintButton(); close(); goLogin(); } }, "LOG OUT"));
+        row.append(el("button", { class: "dbda-b", type: "button", onclick: () => { saveToken(null); user = null; avatar = null; paintButton(); close(); goLogin(null, true); } }, "LOG OUT"));
         row.append(el("button", { class: "dbda-b ghost", type: "button", onclick: async () => {
             try { await api("/auth/logout-all", { method: "POST" }); } catch (e) { /* token may already be dead */ }
-            saveToken(null); user = null; avatar = null; paintButton(); close(); goLogin();
+            saveToken(null); user = null; avatar = null; paintButton(); close(); goLogin(null, true);
         } }, "LOG OUT EVERYWHERE"));
         box.append(row);
     }
@@ -376,8 +378,7 @@
     let wall = null;
     function signupWall(onBack) {
         if (wall) return;
-        const file = location.pathname.split("/").pop() || "index.html";
-        const base = "login.html?next=" + encodeURIComponent(file + location.search);
+        const base = D.loginUrl();
         const linkStyle = "display:inline-flex;align-items:center;text-decoration:none;color:#fff";
         const dismiss = () => {
             if (!wall) return;
@@ -432,12 +433,6 @@
 
     // ---------- start ----------
     function start() {
-        if (isGuest()) {
-            // keep guest mode when jumping to another DBD site (each site is its own domain)
-            document.querySelectorAll(".site-switch-link").forEach(a => {
-                try { const u = new URL(a.href); u.searchParams.set("guest", "1"); a.href = u.toString(); } catch (e) { /* ignore */ }
-            });
-        }
         mountButton(); paintButton();
         refresh().then(() => {
             markReady();

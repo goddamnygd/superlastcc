@@ -32,6 +32,7 @@ PERK_KINDS = {
     "stealth": "Vanish for 2 turns: the Killer is much less likely to find you, even while you repair.",
 }
 # Every Survivor perk is matched by name to one of 5 simple one-use moves (the real perks are far more complex).
+# NOTE: this list is the FALLBACK. The live data is in the database (perks table, see _catalog.py).
 _KIND_PERKS = {
     "tempo": ["Sprint Burst", "Dead Hard", "Quick & Quiet", "Lithe", "Head On", "Windows of Opportunity", "Balanced Landing",
               "Urban Evasion", "Dance With Me", "Decisive Strike", "Smash Hit", "Flip-Flop", "Blood Rush", "Overcome", "Flashbang",

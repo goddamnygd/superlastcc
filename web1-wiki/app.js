@@ -1,5 +1,5 @@
-const API_URL = "https://superlastcc.vercel.app/api/v1";
-const API_KEY = "student-api-key-123";
+// The API address and key are not here: calls go to the hub's proxy (DBD.api, see shared/config.js).
+const API_URL = window.DBD.api;
 
 let currentPage = 0;
 const limit = 14;
@@ -17,10 +17,7 @@ function esc(value) {
 
 // CENTRALIZED FETCH OPTIONS
 const fetchOptions = {
-    cache: "no-store",
-    headers: {
-        "x-api-key": API_KEY
-    }
+    cache: "no-store"
 };
 
 

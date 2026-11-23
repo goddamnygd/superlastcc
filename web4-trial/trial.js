@@ -55,7 +55,7 @@
         try {
             return await DBDAuth.api(path, { method: method || "GET", body });
         } catch (e) {
-            if (e.status === 401) { location.replace("login.html?reason=expired"); }
+            if (e.status === 401) { location.replace(DBD.loginUrl({ reason: "expired" })); }
             throw e;
         }
     }
@@ -319,7 +319,7 @@
             const p = $("loading");
             p.textContent = "The Trial needs an account. ";
             const a = el("a", "inline-link", "Log in or create one");
-            a.href = "login.html?next=index.html";
+            a.href = DBD.loginUrl();
             p.append(a, document.createTextNode("."));
             return;
         }

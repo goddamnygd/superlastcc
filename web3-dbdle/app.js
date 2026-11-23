@@ -1,6 +1,5 @@
-const API_BASE_URL = "https://superlastcc.vercel.app/api/v1";   // same API as login (auth.js)
-
-const API_KEY = "student-api-key-123";
+// The API address and key are not here: calls go to the hub's proxy (DBD.api, see shared/config.js).
+const API_BASE_URL = window.DBD.api;
 
 const params = new URLSearchParams(window.location.search);
 
@@ -46,11 +45,7 @@ async function loadCharacters() {
     try {
         const response = await fetch(
             `${API_BASE_URL}/characters?limit=100&offset=0&sort_by=name&order=asc`,
-            {
-                headers: {
-                    "x-api-key": API_KEY
-                }
-            }
+            { cache: "no-store" }
         );
 
         if (!response.ok) {

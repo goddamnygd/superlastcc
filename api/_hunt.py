@@ -84,6 +84,7 @@ def perk_kind(perk_name, slot_index: int) -> str:
     return PERK_KIND_BY_NAME.get(perk_name or "") or _SLOT_DEFAULT[slot_index]
 
 # ---------------- Killer powers ----------------
+# NOTE: the perk and power lists in this file are the FALLBACK. The live data is in the database (see _catalog.py).
 # Every Killer power is a simplified version of its real idea, grouped into 7 easy mechanics.
 # cd = turns before it is ready again. The real powers are far more complex; this keeps the game readable.
 PRIME_BOOST = 0.30            # extra hit chance on the next attack after "stalk"
@@ -112,11 +113,12 @@ _KIND_POWERS = {
     "strike": ["Dream Demon"],
 }
 POWER_KIND_BY_NAME = {name: kind for kind, names in _KIND_POWERS.items() for name in names}
+DEFAULT_POWER_KIND = "strike"          # the database (power_kinds.is_default) can change this, see _catalog.py
 
 
 def power_kind(power_name) -> str:
-    """Unknown or new powers (a Killer an admin adds later) fall back to a plain strike."""
-    return POWER_KIND_BY_NAME.get(power_name or "", "strike")
+    """Unknown or new powers (a Killer an admin adds later) fall back to the default kind (a plain strike)."""
+    return POWER_KIND_BY_NAME.get(power_name or "", DEFAULT_POWER_KIND)
 
 
 def _kind(state: dict) -> str:

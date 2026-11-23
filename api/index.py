@@ -21,6 +21,7 @@ from supabase import Client, create_client
 # Helper modules live next to this file. The sys.path line makes the import work no matter
 # how the platform starts the app. (Files starting with "_" are not served as endpoints.)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _catalog  # noqa: E402
 import _games  # noqa: E402
 import _hunt  # noqa: E402
 import _trial  # noqa: E402
@@ -414,6 +415,10 @@ def home():
             "/api/v1/characters",
             "/api/v1/characters/search",
             "/api/v1/characters/{character_id}",
+            "/api/v1/perks",
+            "/api/v1/powers",
+            "/api/v1/perk-kinds",
+            "/api/v1/power-kinds",
             "/api/v1/auth/register",
             "/api/v1/auth/login",
             "/api/v1/me",
@@ -510,6 +515,117 @@ def delete_character(character_id: int):
     if deleted is None:
         raise HTTPException(status_code=404, detail="Character not found.")
     return {"message": "Character deleted.", "id": character_id, "name": deleted["name"]}
+
+
+# ============================================================
+# PERKS AND POWERS (read key to read, admin to change)
+# The game rules for every perk and power live in the database (sql/perks_powers.sql).
+# A perk or power is one of a fixed set of simple moves ("kinds") the game engines can play;
+# the admin chooses which kind each one uses and can tune a power kind's cooldown and boost.
+# ============================================================
+Side = Literal["survivor", "killer"]
+
+
+class PerkUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    kind: str = Field(min_length=1, max_length=30)
+
+
+class PowerKindUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    cooldown: Optional[int] = Field(default=None, ge=0, le=20)
+    boost: Optional[float] = Field(default=None, ge=0, le=1)
+    help: Optional[str] = Field(default=None, min_length=1, max_length=300)
+
+    @model_validator(mode="after")
+    def at_least_one(self):
+        if not self.model_fields_set:
+            raise ValueError("Send at least one field to change.")
+        return self
+
+
+def _kind_or_422(table: str, match: dict, supported):
+    rows = run(get_client().table(table).select("kind").match(match).limit(1)).data
+    if not rows or rows[0]["kind"] not in supported:
+        raise HTTPException(status_code=422, detail="Unknown kind. See /api/v1/perk-kinds and /api/v1/power-kinds.")
+
+
+@app.get("/api/v1/perks", dependencies=[Depends(verify_api_key)])
+def list_perks(
+    side: Optional[Side] = Query(None, description="'survivor' or 'killer'"),
+    kind: Optional[str] = Query(None, max_length=30),
+    q: Optional[str] = Query(None, max_length=100, description="Part of the perk name"),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    query = get_client().table("perks").select("id, name, side, kind", count="exact")
+    if side:
+        query = query.eq("side", side)
+    if kind:
+        query = query.eq("kind", kind)
+    if q:
+        clean = re.sub(r'[%*_\\"(),]', " ", q).strip()
+        if clean:
+            query = query.ilike("name", f"%{clean}%")
+    res = run(query.order("side").order("name").range(offset, offset + limit - 1))
+    return {"total": res.count or 0, "limit": limit, "offset": offset, "perks": res.data}
+
+
+@app.get("/api/v1/powers", dependencies=[Depends(verify_api_key)])
+def list_powers(
+    kind: Optional[str] = Query(None, max_length=30),
+    limit: int = Query(100, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    query = get_client().table("powers").select("id, name, kind", count="exact")
+    if kind:
+        query = query.eq("kind", kind)
+    res = run(query.order("name").range(offset, offset + limit - 1))
+    return {"total": res.count or 0, "limit": limit, "offset": offset, "powers": res.data}
+
+
+@app.get("/api/v1/perk-kinds", dependencies=[Depends(verify_api_key)])
+def list_perk_kinds():
+    rows = run(get_client().table("perk_kinds").select("side, kind, help, default_slot").order("side").order("kind")).data
+    return {"perk_kinds": rows}
+
+
+@app.get("/api/v1/power-kinds", dependencies=[Depends(verify_api_key)])
+def list_power_kinds():
+    rows = run(get_client().table("power_kinds").select("kind, cooldown, boost, help, is_default").order("kind")).data
+    return {"power_kinds": rows}
+
+
+@app.patch("/api/v1/perks/{perk_id}", dependencies=[Depends(verify_admin_key)])
+def update_perk(perk_id: int, body: PerkUpdate):
+    rows = run(get_client().table("perks").select("id, side").eq("id", perk_id).limit(1)).data
+    if not rows:
+        raise HTTPException(status_code=404, detail="Perk not found.")
+    _kind_or_422("perk_kinds", {"side": rows[0]["side"], "kind": body.kind}, _catalog._SUPPORTED_PERK_KINDS[rows[0]["side"]])
+    updated = run(get_client().table("perks").update({"kind": body.kind}).eq("id", perk_id)).data
+    _catalog.invalidate()
+    return updated[0]
+
+
+@app.patch("/api/v1/powers/{power_id}", dependencies=[Depends(verify_admin_key)])
+def update_power(power_id: int, body: PerkUpdate):
+    _kind_or_422("power_kinds", {"kind": body.kind}, _catalog._SUPPORTED_POWER_KINDS)
+    updated = run(get_client().table("powers").update({"kind": body.kind}).eq("id", power_id)).data
+    if not updated:
+        raise HTTPException(status_code=404, detail="Power not found.")
+    _catalog.invalidate()
+    return updated[0]
+
+
+@app.patch("/api/v1/power-kinds/{kind}", dependencies=[Depends(verify_admin_key)])
+def update_power_kind(kind: str, body: PowerKindUpdate):
+    if kind not in _catalog._SUPPORTED_POWER_KINDS:
+        raise HTTPException(status_code=404, detail="Power kind not found.")
+    updated = run(get_client().table("power_kinds").update(body.model_dump(exclude_unset=True)).eq("kind", kind)).data
+    if not updated:
+        raise HTTPException(status_code=404, detail="Power kind not found.")
+    _catalog.invalidate()
+    return updated[0]
 
 
 # ============================================================
@@ -1098,6 +1214,14 @@ def admin_round_answer(round_id: UUID, admin: dict = Depends(require_admin)):
 # The equipped avatar decides the mode: a Survivor plays Escape (api/_trial.py), a Killer plays
 # Hunt (api/_hunt.py). To play the other side, equip a different character.
 # ============================================================
+def ensure_catalog():
+    """Load the perk and power tables (cached for a minute). If the database is down, the built-in lists are used."""
+    try:
+        _catalog.refresh(get_client())
+    except DatabaseUnavailable:
+        pass
+
+
 def db_active_trial(user_id: int):
     rows = run(
         get_client().table("trial_runs").select("id, state, turn, character_id, mode")
@@ -1123,6 +1247,7 @@ def trial_payload(run_id: str, state: dict) -> dict:
 @app.get("/api/v1/trial/current")
 def trial_current(user: dict = Depends(get_current_user)):
     """The active run if there is one, plus which mode the equipped avatar plays."""
+    ensure_catalog()
     active = db_active_trial(user["id"])
     avatar = db_get_avatar(user["id"])
     can_play, reason, mode = True, None, None
@@ -1142,6 +1267,7 @@ def trial_current(user: dict = Depends(get_current_user)):
 
 @app.post("/api/v1/trial/start", status_code=201)
 def trial_start(user: dict = Depends(get_current_user)):
+    ensure_catalog()
     avatar = db_get_avatar(user["id"])
     if avatar is None:
         raise HTTPException(status_code=409, detail="Equip a character on the Wiki first.")
@@ -1175,6 +1301,7 @@ def trial_start(user: dict = Depends(get_current_user)):
 
 @app.post("/api/v1/trial/action")
 def trial_action(body: TrialActionBody, user: dict = Depends(get_current_user)):
+    ensure_catalog()
     active = db_active_trial(user["id"])
     if active is None:
         raise HTTPException(status_code=404, detail="You have no active trial.")

@@ -1,20 +1,54 @@
-/* Login and sign-up page. Talks to the API and stores the token under the same key auth.js uses. */
+/* THE login page for all four sites. It lives on the hub (the Wiki).
+   A site sends visitors here with ?return=<page they wanted>. After login (or guest) they are sent back
+   there with the token in the URL #fragment, which that site's config.js saves.
+   The hub's own storage also keeps the login, so the next site a visitor opens is bounced straight back. */
 (function () {
     "use strict";
-    var API = "https://superlastcc.vercel.app/api/v1";
-    var TOKEN_KEY = "dbd_token";
-    var GUEST_KEY = "dbd_guest";
+    var D = window.DBD;
+    var API = D.api;
+    var TOKEN_KEY = D.TOKEN_KEY;
+    var GUEST_KEY = D.GUEST_KEY;
 
     var $ = function (id) { return document.getElementById(id); };
     var tabs = { login: $("tabLogin"), register: $("tabRegister") };
     var panels = { login: $("panelLogin"), register: $("panelRegister") };
     var params = new URLSearchParams(location.search);
 
-    // Only these pages may be opened after login (stops a crafted ?next= from sending people elsewhere)
-    function safeNext() {
-        var n = params.get("next") || "";
-        return /^(index|game)\.html(\?[A-Za-z0-9_=&.\-]*)?$/.test(n) ? n : "index.html";
+    // Where to send the visitor afterwards. Only a page of one of OUR four sites is accepted
+    // (stops a crafted ?return= from sending people, and their token, anywhere else).
+    function safeReturn() {
+        var u;
+        try { u = new URL(params.get("return") || ""); } catch (e) { return null; }
+        if (!D.siteKey(u.origin)) return null;
+        if (!/^\/((index|game)\.html)?$/.test(u.pathname)) return null;
+        if (u.search && !/^\?[A-Za-z0-9_=&.\-]*$/.test(u.search)) return null;
+        return u.origin + u.pathname + u.search;
     }
+    function goBack(handoff) { location.replace((safeReturn() || D.sites.wiki + "/") + (handoff || "")); }
+    function returnSite() { var r = safeReturn(); return r ? D.siteKey(new URL(r).origin) : "wiki"; }
+
+    // The page looks like the site the visitor came from
+    var BRANDS = {
+        wiki:     { name: "THE WIKI", head: ["THE", "WIKI"], tag: "Every Survivor and Killer, one searchable database.", chips: ["SURVIVORS", "KILLERS", "PERKS & POWERS"], lead: "Log in, create a free account, or continue as a guest to browse the roster.", guest: "No account? Browse the Wiki as a guest." },
+        minigame: { name: "THE MINIGAME", head: ["THE", "MINIGAME"], tag: "Win matches, equip your avatar and level it up.", chips: ["PLAY", "LEVEL UP", "PRESTIGE"], lead: "Log in, create a free account, or continue as a guest.", guest: "No account? Try each game mode once as a guest." },
+        dbdle:    { name: "DBDLE", head: ["", "DBDLE"], tag: "Guess the daily character from the clues.", chips: ["DAILY", "GUESS", "STREAK"], lead: "Log in, create a free account, or continue as a guest.", guest: "No account? Try each game mode once as a guest." },
+        trial:    { name: "THE TRIAL", head: ["THE", "TRIAL"], tag: "Survive the fog. Escape the Killer with your levelled-up avatar.", chips: ["ESCAPE", "PERKS", "SURVIVE"], lead: "Log in or create a free account to enter a trial.", guest: null }
+    };
+    (function brand() {
+        var site = returnSite();
+        var b = BRANDS[site] || BRANDS.wiki;
+        document.title = "Log in - Dead bai Daylight " + b.name;
+        $("brandTitle").textContent = b.name;
+        var h = $("introHead"); h.textContent = "";
+        if (b.head[0]) { h.append(document.createTextNode(b.head[0]), document.createElement("br")); }
+        var em = document.createElement("em"); em.textContent = b.head[1]; h.append(em);
+        $("introTag").textContent = b.tag;
+        var chips = $("introChips"); chips.textContent = "";
+        b.chips.forEach(function (c) { var s = document.createElement("span"); s.textContent = c; chips.append(s); });
+        $("loginLead").textContent = b.lead;
+        var box = document.querySelector(".guest-box");
+        if (box) { if (b.guest) $("guestNote").textContent = b.guest; else box.remove(); }   // the Trial needs an account
+    })();
 
     function saveToken(t) { try { localStorage.setItem(TOKEN_KEY, t); return true; } catch (e) { return false; } }
     function getToken() { try { return localStorage.getItem(TOKEN_KEY); } catch (e) { return null; } }
@@ -75,7 +109,7 @@
         if (!data.token || !saveToken(data.token)) {
             throw new Error("Your browser blocked saving the login. Turn off private mode or allow site data, then try again.");
         }
-        location.replace(safeNext());
+        goBack("#dbd_token=" + encodeURIComponent(data.token));
     }
 
     function wire(formId, errId, btnId, work) {
@@ -111,7 +145,7 @@
                 $("notice").hidden = false;
                 return;
             }
-            location.replace(safeNext());
+            goBack("#dbd_guest=1");
         });
     }
 
@@ -121,12 +155,25 @@
         $("notice").hidden = false;
     }
 
-    // Already logged in? Skip this page.
+    function clearHub() { try { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(GUEST_KEY); } catch (e) { /* ignore */ } }
+
+    // Log out (the visitor logged out on a site) or an expired session: forget the hub's login too,
+    // otherwise this page would send them straight back in. Then show the form.
     var existing = getToken();
-    if (existing) {
+    if (params.get("logout") === "1") {
+        clearHub();
+        history.replaceState(null, "", location.pathname + "?return=" + encodeURIComponent(safeReturn() || D.sites.wiki + "/") + "#login");
+    } else if (params.get("reason") === "expired") {
+        clearHub();
+    } else if (existing) {
+        // Already logged in here? Send them back to the page they wanted, token included.
         fetch(API + "/me", { headers: { Authorization: "Bearer " + existing }, cache: "no-store" })
-            .then(function (r) { if (r.ok) location.replace(safeNext()); else { try { localStorage.removeItem(TOKEN_KEY); } catch (e) {} } })
+            .then(function (r) { if (r.ok) goBack("#dbd_token=" + encodeURIComponent(existing)); else clearHub(); })
             .catch(function () {});
+    } else if (params.get("silent") === "1" && returnSite() !== "trial") {
+        // A guest on one site is a guest on the others (the Trial always needs an account)
+        var guest = null; try { guest = localStorage.getItem(GUEST_KEY); } catch (e) { /* ignore */ }
+        if (guest === "1") goBack("#dbd_guest=1");
     }
 
     show(location.hash === "#register" ? "register" : "login");

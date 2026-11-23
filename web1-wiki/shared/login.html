@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="robots" content="noindex">
-    <title>Log in - Dead bai Daylight DBDLE</title>
+    <title>Log in - Dead bai Daylight THE WIKI</title>
     <link rel="stylesheet" href="login.css">
 </head>
 <body>
@@ -13,22 +13,22 @@
         <div class="brand">
             <span class="dbd-logo">DEAD BAI<br>DAYLIGHT <span class="scratch">|||||</span></span>
             <span class="brand-divider"></span>
-            <span class="brand-title">DBDLE</span>
+            <span class="brand-title" id="brandTitle">THE WIKI</span>
         </div>
     </header>
 
     <main>
         <div class="intro" aria-hidden="true">
             <p class="kicker">DEAD BAI DAYLIGHT</p>
-            <h2><em>DBDLE</em></h2>
-            <p>Guess the daily character from the clues.</p>
-            <div class="chips"><span>DAILY</span><span>GUESS</span><span>STREAK</span></div>
+            <h2 id="introHead">THE<br><em>WIKI</em></h2>
+            <p id="introTag">Every Survivor and Killer, one searchable database.</p>
+            <div class="chips" id="introChips"><span>SURVIVORS</span><span>KILLERS</span><span>PERKS &amp; POWERS</span></div>
         </div>
         <section class="card" aria-labelledby="title">
             <div class="card-head">
                 <p class="kicker">MEMBERS ONLY</p>
                 <h1 id="title">Enter the fog</h1>
-                <p class="lead">Log in, create a free account, or continue as a guest.</p>
+                <p class="lead" id="loginLead">Log in, create a free account, or continue as a guest to browse the roster.</p>
             </div>
 
             <p id="notice" class="notice" role="status" hidden></p>
@@ -84,13 +84,14 @@
 
             <!-- CONTINUE AS GUEST -->
             <div class="guest-box">
-                <p class="guest-note">No account? Try each game mode once as a guest.</p>
+                <p class="guest-note" id="guestNote">No account? Browse the Wiki as a guest.</p>
                 <button id="guestBtn" class="guest-btn" type="button">CONTINUE AS GUEST</button>
             </div>
         </section>
     </main>
 
     <footer>DEAD BAI DAYLIGHT</footer>
+    <script src="config.js"></script>
     <script src="login.js"></script>
     <script src="bgmedia.js"></script>
 </body>
