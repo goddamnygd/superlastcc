@@ -17,7 +17,7 @@
 
 // Which sites may call this proxy from a browser: the list in shared/config.js (extra ones: ALLOWED_ORIGINS=a,b)
 let ALLOWED = [];
-try { ALLOWED = Object.values(require("../../shared/config.js").SITES); } catch (e) { /* env only */ }
+try { ALLOWED = Object.values(require("../shared/config.js").SITES); } catch (e) { console.error("proxy: cannot load shared/config.js, CORS allow-list will be empty:", e.message); }
 ALLOWED = ALLOWED.concat((process.env.ALLOWED_ORIGINS || "").split(",").map((s) => s.trim().replace(/\/+$/, "")).filter(Boolean));
 
 function cors(req, res) {

@@ -25,7 +25,9 @@
     var token = getToken();
     if (!token) {
         // Guest: no login needed. The page stays visible, and the games do not require an avatar.
-        if (isGuest()) return;
+        // The Trial always needs an account, so a leftover guest flag must not let anyone in there
+        if (isGuest() && D.siteKey(location.origin) !== "trial") return;
+        if (isGuest()) { try { localStorage.removeItem(D.GUEST_KEY); } catch (e) { /* ignore */ } }
         root.style.visibility = "hidden"; toLogin(); return;
     }
 
@@ -48,5 +50,5 @@
             }
             reveal();   // ok, or the server is having a problem: let the page show its own error
         })
-        .catch(function () { clearTimeout(timer); reveal(); });
+        .catch(function (e) { clearTimeout(timer); console.warn("gate: could not reach the API (CORS or network?)", e); reveal(); });
 })();
