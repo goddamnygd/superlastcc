@@ -163,9 +163,7 @@
     if (params.get("logout") === "1") {
         clearHub();
         history.replaceState(null, "", location.pathname + "?return=" + encodeURIComponent(safeReturn() || D.sites.wiki + "/") + "#login");
-    } else if (params.get("reason") === "expired") {
-        clearHub();
-    } else if (existing) {
+        } else if (existing) {
         // Already logged in here? Send them back to the page they wanted, token included.
         fetch(API + "/me", { headers: { Authorization: "Bearer " + existing }, cache: "no-store" })
             .then(function (r) { if (r.ok) goBack("#dbd_token=" + encodeURIComponent(existing)); else clearHub(); })
