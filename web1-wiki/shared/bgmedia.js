@@ -10,7 +10,7 @@
     // ---- SETTINGS: shared by all four sites (the number of login videos per site is in sites.json) ----
     // MEDIA_BASE points at the `backgorund` folder of the PUBLIC GitHub repo through jsDelivr.
     var MEDIA_BASE = "https://cdn.jsdelivr.net/gh/goddamnygd/superlastcc@main/backgorund/";
-    var VIDEOS = ["bg-1.mp4", "bg-2.mp4", "bg-3.mp4", "bg-4.mp4", "bg-5.mp4", "bg-6.mp4", "bg-7.mp4", "bg-8.mp4", "bg-9.mp4", "bg-10.mp4", "bg-11.mp4", "bg-12.mp4", "bg-13.mp4", "bg-14.mp4", "bg-15.mp4", "bg-16.mp4", "bg-17.mp4", "bg-18.mp4", "bg-19.mp4", "bg-20.mp4";
+    var VIDEOS = ["bg-1.mp4", "bg-2.mp4", "bg-3.mp4", "bg-4.mp4", "bg-5.mp4", "bg-6.mp4", "bg-7.mp4", "bg-8.mp4", "bg-9.mp4", "bg-10.mp4", "bg-11.mp4", "bg-12.mp4", "bg-13.mp4", "bg-14.mp4", "bg-15.mp4", "bg-16.mp4", "bg-17.mp4", "bg-18.mp4", "bg-19.mp4", "bg-20.mp4"];
     var MUSIC = "bg_music.mp3";
     var MUSIC_VOLUME = 0.35;   // 0 to 1
     // ---------------------------------------------------------------------------------------------
