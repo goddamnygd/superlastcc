@@ -2,7 +2,7 @@
 const API_URL = window.DBD.api;
 
 let currentPage = 0;
-const limit = 14;
+const limit = 18;
 let currentRole = "";
 let currentQuery = "";
 let debounceTimer = null;
