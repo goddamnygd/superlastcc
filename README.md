@@ -12,6 +12,13 @@ A cloud-based project with one REST API and four websites that all use it.
 | Shared files (hub) | `web1-wiki/shared/` | The ONE copy of the login page, login gate, auth, config and background media. The Wiki is the hub and hosts them for all four sites. |
 | Database | `sql/` | Tables, functions and security rules for Supabase. |
 
+## Look and effects (shared)
+
+The design lives in the hub (`web1-wiki/shared/`), so all four sites share it and the login page stays as it was:
+
+- `theme.css`: colors, fonts, header, buttons, pop-ups, marquee, reveal classes. Loaded by every site, **not** by `login.html`.
+- `fx.js`: fog and embers, terror-radius cursor, generator scroll bar, flashlight (`.flashlight` elements), card tilt, count-up numbers. Games call `DBDFX.burst / flash / shake`. Everything is off for `prefers-reduced-motion`.
+
 ## Accounts
 
 - **Normal user (`user`)**: can register, log in, equip **one** avatar, and read characters.
