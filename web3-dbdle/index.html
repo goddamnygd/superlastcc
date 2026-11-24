@@ -7,7 +7,11 @@
     <title>DBDle - Choose Mode</title>
     <script src="https://superlastcc-web1-wiki.vercel.app/shared/config.js"></script>
     <script src="https://superlastcc-web1-wiki.vercel.app/shared/gate.js" data-require-avatar></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://superlastcc-web1-wiki.vercel.app/shared/theme.css">
     <link rel="stylesheet" href="style.css">
+    <script src="https://superlastcc-web1-wiki.vercel.app/shared/fx.js" defer></script>
 </head>
 <body class="home-page">
 
@@ -43,9 +47,9 @@
                     A DEAD BAI DAYLIGHT CHARACTER GUESSING GAME
                 </p>
 
-                <h1>
+                <h1 class="glitch">
                     WHO'S HIDING<br>
-                    IN THE FOG?
+                    IN THE <span class="outline">FOG?</span>
                 </h1>
 
                 <p class="hero-text">
@@ -59,29 +63,24 @@
             </div>
 
 
-            <div class="hero-art">
-
-                <div class="hero-circle"></div>
-
-                <div class="hero-stat hero-stat-one">
-                    <span>MODE</span>
-                    <strong>03</strong>
+            <div class="hero-art" aria-hidden="true">
+                <div class="demo">
+                    <div class="demo-head"><span>CHARACTER</span><span>ROLE</span><span>REALM</span><span>DLC</span><span>YEAR</span></div>
+                    <div class="demo-row r1"><i class="c wrong">?</i><i class="c correct">KILLER</i><i class="c wrong">MACMILLAN</i><i class="c partial">CH. II</i><i class="c wrong">2016 <b>&uarr;</b></i></div>
+                    <div class="demo-row r2"><i class="c wrong">?</i><i class="c wrong">SURVIVOR</i><i class="c correct">THE FOG</i><i class="c wrong">CH. IX</i><i class="c correct">2017</i></div>
+                    <div class="demo-row r3"><i class="c correct">?</i><i class="c correct">KILLER</i><i class="c correct">THE FOG</i><i class="c correct">CH. II</i><i class="c correct">2017</i></div>
+                    <p class="demo-cap">GREEN IS A MATCH. AMBER IS CLOSE. ARROWS SHOW WHICH WAY TO GO.</p>
                 </div>
-
-                <div class="hero-stat hero-stat-two">
-                    <span>CLUES</span>
-                    <strong>08</strong>
-                </div>
-
-                <div class="hero-stat hero-stat-three">
-                    <span>GOAL</span>
-                    <strong>GUESS</strong>
-                </div>
-
             </div>
 
         </section>
 
+
+        <div class="marquee" aria-hidden="true">
+            <div class="marquee-track">
+                <span>Guess</span><span>Compare</span><span>Narrow it down</span><span>Find them</span><span>Survivor</span><span>Killer</span><span>Mixed</span>
+            </div>
+        </div>
 
         <section id="modes" class="mode-section">
 

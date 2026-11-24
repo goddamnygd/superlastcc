@@ -38,6 +38,8 @@
         push: "A big burst of generator progress. One use."
     };
 
+    const fx = () => window.DBDFX;
+    let lastHp = null, lastSac = null, lastTurn = null;
     let run = null;        // what the server last told us about the active run
     let busy = false;
     let info = null;       // /trial/current
@@ -192,6 +194,21 @@
             renderEscape();
         }
         renderLogAndActions();
+        feedback(hunt);
+    }
+
+    // screen feedback: shake when you are hurt, flash when a Survivor is sacrificed, faster cursor pulse during a chase
+    function feedback(hunt) {
+        const arena = $("arena");
+        const fresh = lastTurn !== null && run.turn !== lastTurn;
+        if (fx() && fresh) {
+            if (!hunt && lastHp !== null && run.hp < lastHp) { fx().shake(arena); fx().flash("red"); }
+            if (hunt && lastSac !== null && run.sacrifices.done > lastSac) { fx().shake(arena); fx().flash("red"); }
+        }
+        lastTurn = run.turn;
+        lastHp = hunt ? null : run.hp;
+        lastSac = hunt ? run.sacrifices.done : null;
+        document.documentElement.classList.toggle("fx-chase", !hunt && run.heartbeat >= 3);
     }
 
     function renderHunt() {
@@ -306,6 +323,12 @@
         run.log.forEach(line => log.append(el("li", null, line)));
         $("result").classList.toggle("won", won);
         show("result");
+        lastHp = lastSac = lastTurn = null;
+        document.documentElement.classList.remove("fx-chase");
+        if (fx()) {
+            if (won) { fx().flash("gold"); fx().burst(innerWidth / 2, innerHeight * .4, { count: 80 }); }
+            else { fx().flash("red"); fx().burst(innerWidth / 2, innerHeight * .4, { blood: true, count: 50 }); }
+        }
     }
 
     $("againBtn").addEventListener("click", () => { run = null; startRun(); });

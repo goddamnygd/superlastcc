@@ -88,7 +88,7 @@ function setHeroCharacter() {
     const fallback = characters.find(character => character.image);
 
     if (preferred || fallback) {
-        heroCharacter.style.backgroundImage = `url("${(preferred || fallback).image}")`;
+        heroCharacter.style.setProperty("--img", `url("${(preferred || fallback).image}")`);
     }
 }
 
@@ -315,6 +315,11 @@ function showWrongGuess() {
     updateLives();
     createBloodSplatter();
 
+    if (window.DBDFX) {
+        DBDFX.shake(document.querySelector(".clue-panel"));
+        DBDFX.flash("red");
+    }
+
     gameMessage.textContent =
         lives > 0
             ? `WRONG. ${lives} ${lives === 1 ? "LIFE" : "LIVES"} REMAIN.`
@@ -380,6 +385,12 @@ function revealCharacter(correct) {
 
     gameScreen.classList.add("hidden");
     revealScreen.classList.remove("hidden");
+    revealScreen.classList.toggle("lost", !correct);
+
+    if (window.DBDFX) {
+        if (correct) { DBDFX.flash("gold"); DBDFX.burst(innerWidth / 2, innerHeight * .55); }
+        else { DBDFX.flash("red"); }
+    }
 }
 
 playAgainBtn.addEventListener("click", () => {

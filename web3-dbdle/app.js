@@ -461,6 +461,7 @@ function flashInvalid(
     message =
         "CHOOSE A VALID CHARACTER FOR THIS MODE"
 ) {
+    if (window.DBDFX) DBDFX.shake(guessForm);
     const oldPlaceholder = guessInput.placeholder;
     guessInput.value = "";
     guessInput.placeholder = message;
@@ -522,6 +523,11 @@ function finishRound(won, xp) {
     resultPanel.classList.remove(
         "hidden"
     );
+
+    if (window.DBDFX) {
+        if (won) { DBDFX.flash("gold"); DBDFX.burst(innerWidth / 2, innerHeight * .45, { count: 70 }); }
+        else { DBDFX.flash("red"); }
+    }
 }
 
 playAgainBtn.addEventListener(

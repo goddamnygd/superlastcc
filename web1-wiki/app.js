@@ -45,6 +45,8 @@ async function loadCharacters(page = 0, role = "") {
         console.log("API Data:", data);
         displayCharacters(data.characters);
         updatePaginationControls(data.total, currentPage);
+        markFilter(role);
+        showTotal(data.total, role);
 
     } catch (error) {
         console.error("Error loading characters:", error);
@@ -112,9 +114,11 @@ function displayCharacters(characters) {
         return;
     }
 
-    characters.forEach(character => {
+    buildReel(characters);
+    characters.forEach((character, index) => {
         const card = document.createElement("div");
         card.className = "agent-card";
+        card.style.setProperty("--i", index);
         card.onclick = () => viewCharacter(character.id);
         const imageUrl = character.image || "https://via.placeholder.com/300x400/090a0c/a82424?text=DBD+Entity";
         card.innerHTML = `
@@ -242,6 +246,34 @@ function changePage(newPage) {
         loadCharacters(newPage, currentRole);
     }
 }
+// FILTER BUTTON STATE + LIVE TOTAL
+function markFilter(role) {
+    document.querySelectorAll(".filter-btn").forEach(btn => {
+        btn.classList.toggle("active", (btn.dataset.role || "") === (role || ""));
+    });
+}
+function showTotal(total, role) {
+    const stat = document.getElementById("statTotal");
+    if (stat && !role && !currentQuery && window.DBDFX && !stat.dataset.done) {
+        stat.dataset.done = "1";
+        DBDFX.count(stat, Number(total) || 0);
+    }
+}
+
+// HERO REEL: a slow band of portraits, dim, lit up by the flashlight (the portraits come from the first page of the API)
+let reelBuilt = false;
+function buildReel(characters) {
+    if (reelBuilt) return;
+    const pics = (characters || []).filter(c => c.image).slice(0, 12);
+    if (pics.length < 4) return;
+    reelBuilt = true;
+    const tiles = pics.map(c => `<figure><img src="${esc(c.image)}" alt="" loading="lazy"><figcaption>${esc(c.name)}</figcaption></figure>`).join("");
+    ["reelDim", "reelLit"].forEach(id => {
+        const reel = document.getElementById(id);
+        if (reel) reel.innerHTML = `<div class="reel-track">${tiles}${tiles}</div>`;
+    });
+}
+
 // HELPERS
 function getContainer() {
     return document.getElementById("characterList") || document.getElementById("agentList");

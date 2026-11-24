@@ -7,7 +7,11 @@
     <title>Dead Bai Daylight - The Wiki</title>
     <script src="/shared/config.js"></script>
     <script src="/shared/gate.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="/shared/theme.css">
     <link rel="stylesheet" href="style.css">
+    <script src="/shared/fx.js" defer></script>
 </head>
 <body>
 
@@ -37,39 +41,43 @@
     <main id="top">
 
         <!-- HERO -->
-        <section class="home-hero">
+        <section class="home-hero flashlight">
+            <div class="hero-reel" aria-hidden="true">
+                <div class="reel reel-dim" id="reelDim"></div>
+                <div class="reel reel-lit" id="reelLit"></div>
+            </div>
+            <div class="hero-shade" aria-hidden="true"></div>
+
             <div class="hero-copy">
                 <p class="eyebrow">THE FOG WIKI &bull; CHARACTER DATABASE</p>
 
-                <h1>SURVIVORS<br>AND KILLERS</h1>
+                <h1 class="glitch">SURVIVORS<br>AND <span class="outline">KILLERS</span></h1>
 
                 <p class="hero-text">
                     Every Survivor and Killer featured in <em>Dead Bai Daylight</em>, in one place.
                     Search by name, perk, power or realm, then open any character card to inspect their full details.
                 </p>
 
-                <a href="#roster" class="main-btn">BROWSE THE ROSTER</a>
-            </div>
-
-            <div class="hero-art" aria-hidden="true">
-                <div class="hero-circle"></div>
-
-                <div class="hero-stat hero-stat-one">
-                    <span>ROLES</span>
-                    <strong>02</strong>
+                <div class="hero-actions">
+                    <a href="#roster" class="main-btn">BROWSE THE ROSTER</a>
+                    <a href="#about" class="secondary-btn">HOW IT WORKS</a>
                 </div>
 
-                <div class="hero-stat hero-stat-two">
-                    <span>PERKS EACH</span>
-                    <strong>03</strong>
-                </div>
-
-                <div class="hero-stat hero-stat-three">
-                    <span>GOAL</span>
-                    <strong>LEARN</strong>
+                <div class="hero-stats">
+                    <div class="hero-stat"><span>ROLES</span><strong data-count="2" data-pad="2">02</strong></div>
+                    <div class="hero-stat"><span>CHARACTERS</span><strong id="statTotal">--</strong></div>
+                    <div class="hero-stat"><span>PERKS EACH</span><strong data-count="3" data-pad="2">03</strong></div>
                 </div>
             </div>
+
+            <p class="hero-hint" aria-hidden="true">MOVE YOUR LIGHT</p>
         </section>
+
+        <div class="marquee" aria-hidden="true">
+            <div class="marquee-track">
+                <span>Survivors</span><span>Killers</span><span>Perks</span><span>Powers</span><span>Realms</span><span>The Entity watches</span>
+            </div>
+        </div>
 
         <!-- ROSTER -->
         <section id="roster" class="content-section roster-section">
@@ -87,14 +95,14 @@
                 </div>
 
                 <div class="role-filters">
-                    <button class="filter-btn" onclick="loadCharacters(0, '')">ALL</button>
-                    <button class="filter-btn" onclick="loadCharacters(0, 'Survivor')">SURVIVORS</button>
-                    <button class="filter-btn" onclick="loadCharacters(0, 'Killer')">KILLERS</button>
+                    <button class="filter-btn active" data-role="" onclick="loadCharacters(0, '')">ALL</button>
+                    <button class="filter-btn" data-role="Survivor" onclick="loadCharacters(0, 'Survivor')">SURVIVORS</button>
+                    <button class="filter-btn" data-role="Killer" onclick="loadCharacters(0, 'Killer')">KILLERS</button>
                 </div>
             </div>
 
             <div id="characterList" class="agent-list">
-                Loading characters from the fog&hellip;
+                <div class="agent-card skeleton"></div><div class="agent-card skeleton"></div><div class="agent-card skeleton"></div><div class="agent-card skeleton"></div><div class="agent-card skeleton"></div><div class="agent-card skeleton"></div>
             </div>
 
             <div id="paginationContainer" class="pagination">
@@ -132,7 +140,7 @@
     <!-- CHARACTER DETAILS MODAL -->
     <div id="characterModal" class="modal">
         <div class="modal-content">
-            <span class="close-btn" onclick="closeModal()">&times;</span>
+            <button class="close-btn" aria-label="Close" onclick="closeModal()">&times;</button>
             <div id="modalBody">
                 <!-- Dynamic character details load here -->
             </div>
